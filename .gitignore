@@ -1,0 +1,8 @@
+__pycache__/
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+src/python_studio/assets/monaco/*
+!src/python_studio/assets/monaco/README.txt

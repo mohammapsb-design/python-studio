@@ -1,0 +1,297 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+html,body{margin:0;height:100%;background:#1e1e1e;color:#d4d4d4;-webkit-text-size-adjust:100%;font-family:sans-serif}
+#app{display:flex;flex-direction:column;height:100%}
+#bar{display:flex;align-items:center;gap:4px;padding:4px;background:#252526;border-bottom:1px solid #111;flex:none}
+#fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;padding-left:4px}
+#fname b{color:#e5c07b}
+button{background:#3a3d41;color:#d4d4d4;border:0;border-radius:4px;padding:8px 10px;font-size:13px}
+button:active{background:#505357}
+#run{background:#2d7d46;color:#fff}
+#stop{background:#a1260d;color:#fff}
+#edwrap{flex:1;min-height:0;position:relative}
+#scroller{position:absolute;inset:0;overflow:auto;display:flex;-webkit-overflow-scrolling:touch}
+#gutter{flex:none;box-sizing:border-box;padding:6px 8px 6px 6px;text-align:right;color:#6e7681;background:#1e1e1e;border-right:1px solid #333;
+  font:14px/20px monospace;white-space:pre;user-select:none;position:sticky;left:0;z-index:2}
+#stack{position:relative;display:grid;flex:1 0 auto;min-width:0}
+#hl,#ta{grid-area:1/1;margin:0;box-sizing:border-box;padding:6px 8px;border:0;font:14px/20px monospace;white-space:pre;
+  tab-size:4;letter-spacing:0;word-spacing:0}
+#hl{pointer-events:none;color:#d4d4d4;min-width:100%}
+#ta{background:transparent;color:transparent;caret-color:#fff;resize:none;overflow:hidden;outline:none;width:100%;height:100%;min-width:0;min-height:0}
+#ta::selection{background:rgba(38,79,120,.8);color:transparent}
+.t-k{color:#c586c0}.t-s{color:#ce9178}.t-c{color:#6a9955;font-style:italic}.t-n{color:#b5cea8}
+.t-f{color:#dcdcaa}.t-b{color:#4ec9b0}.t-o{color:#9cdcfe}.t-d{color:#d7ba7d}
+#pop{position:absolute;z-index:5;background:#252526;border:1px solid #454545;border-radius:4px;display:none;min-width:120px;
+  box-shadow:0 2px 8px rgba(0,0,0,.6)}
+#pop div{padding:8px 12px;font:14px monospace;color:#d4d4d4;white-space:pre}
+#pop div:active,#pop div.sel{background:#094771}
+#con{flex:none;height:35%;display:flex;flex-direction:column;background:#0c0c0c;border-top:2px solid #007acc}
+#constatus{flex:none;padding:3px 8px;font-size:12px;color:#9da5b4;background:#1b1b1b}
+#out{flex:1;margin:0;padding:4px 8px;overflow:auto;font:13px/17px monospace;white-space:pre-wrap;word-break:break-word;
+  user-select:text;-webkit-user-select:text}
+.o-out{color:#d4d4d4}.o-err{color:#f48771}.o-note{color:#9da5b4;font-style:italic}.o-ok{color:#6a9955}.o-bad{color:#f14c4c}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:10}
+#modal .box{background:#252526;padding:16px;border-radius:6px;max-width:80%}
+#modal .row{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+</style></head><body>
+<div id="app">
+ <div id="bar">
+  <div id="fname"></div>
+  <button id="run">Run</button><button id="stop" style="display:none">Stop</button>
+  <button id="save">Save</button><button id="tab">Tab</button><button id="tog">Out</button><button id="exit">Exit</button>
+ </div>
+ <div id="edwrap"><div id="scroller"><div id="gutter">1</div>
+  <div id="stack"><pre id="hl"></pre>
+   <textarea id="ta" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
+   <div id="pop"></div></div></div></div>
+ <div id="con"><div id="constatus">Console</div><pre id="out"></pre></div>
+</div>
+<div id="modal"><div class="box"><div id="mtext">Unsaved changes.</div>
+ <div class="row"><button id="m-save">Save &amp; exit</button><button id="m-disc">Discard</button><button id="m-cancel">Cancel</button></div></div></div>
+<script>
+/*CORE-START*/
+var PSCore=(function(){
+  function set(s){var o=Object.create(null);s.split(" ").forEach(function(w){o[w]=1});return o}
+  var KW=set("False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield");
+  var BI=set("abs aiter all anext any ascii bin bool breakpoint bytearray bytes callable chr classmethod compile complex delattr dict dir divmod enumerate eval exec filter float format frozenset getattr globals hasattr hash help hex id input int isinstance issubclass iter len list locals map max memoryview min next object oct open ord pow print property range repr reversed round set setattr slice sorted staticmethod str sum super tuple type vars zip Exception ValueError TypeError KeyError IndexError RuntimeError OSError ImportError AttributeError NameError StopIteration NotImplementedError ZeroDivisionError FileNotFoundError");
+  var RE_SRC="((?:\\b[rRbBuUfF]{1,2})?(?:\"\"\"[\\s\\S]*?(?:\"\"\"|$)|'''[\\s\\S]*?(?:'''|$)|\"(?:\\\\.|[^\"\\\\\\n])*\"?|'(?:\\\\.|[^'\\\\\\n])*'?))"+
+    "|(#[^\\n]*)"+
+    "|(\\b(?:0[xXoObB][0-9a-fA-F_]+|\\d[\\d_]*(?:\\.[\\d_]*)?(?:[eE][+-]?\\d+)?[jJ]?))"+
+    "|(@[A-Za-z_][\\w.]*)"+
+    "|([A-Za-z_]\\w*)"+
+    "|([+\\-*/%=<>!&|^~:.,;()\\[\\]{}]+)";
+  // returns [{t:'s'|'c'|'n'|'d'|'k'|'f'|'b'|'i'|'o', a:start, b:end}]
+  function tokenize(text){
+    var re=new RegExp(RE_SRC,"g"),out=[],m,prev="";
+    while((m=re.exec(text))){
+      var a=m.index,b=re.lastIndex,t=null;
+      if(m[0].length===0){re.lastIndex++;continue}
+      if(m[1]!==undefined)t="s";
+      else if(m[2]!==undefined)t="c";
+      else if(m[3]!==undefined)t="n";
+      else if(m[4]!==undefined)t="d";
+      else if(m[5]!==undefined){
+        var w=m[5];
+        if(KW[w])t="k";else if(prev==="def"||prev==="class")t="f";else if(BI[w])t="b";else t="i";
+        prev=w;
+      } else if(m[6]!==undefined){t="o"}
+      if(m[5]===undefined)prev="";
+      out.push({t:t,a:a,b:b});
+    }
+    return out;
+  }
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+  function highlight(text,toks){
+    toks=toks||tokenize(text);
+    var html="",last=0;
+    for(var i=0;i<toks.length;i++){
+      var k=toks[i];
+      if(k.a>last)html+=esc(text.slice(last,k.a));
+      var s=esc(text.slice(k.a,k.b));
+      html+=(k.t==="i")?s:'<span class="t-'+k.t+'">'+s+"</span>";
+      last=k.b;
+    }
+    return html+esc(text.slice(last));
+  }
+  function insideStringOrComment(text,pos,toks){
+    for(var i=0;i<toks.length;i++){
+      var k=toks[i];
+      if(k.a>=pos)break;
+      if(k.t==="c"&&pos<=k.b)return true;
+      if(k.t==="s"){
+        if(pos<k.b)return true;
+        if(pos===k.b){ // right after the token: inside only if it was not closed
+          var q=text.slice(k.a,k.b).replace(/^[rRbBuUfF]{1,2}/,""),c=q.charAt(0),closed;
+          if(q.slice(0,3)===c+c+c)closed=q.length>=6&&q.slice(-3)===c+c+c;
+          else closed=q.length>=2&&q.charAt(q.length-1)===c;
+          if(!closed)return true;
+        }
+      }
+    }
+    return false;
+  }
+  function wordAt(text,pos){
+    var i=pos;
+    while(i>0&&/\w/.test(text.charAt(i-1)))i--;
+    return {start:i,prefix:text.slice(i,pos)};
+  }
+  // returns {start, items:[names]} or null
+  function complete(text,pos,max){
+    max=max||6;
+    var w=wordAt(text,pos);
+    if(w.prefix.length<2||/^\d/.test(w.prefix))return null;
+    if(w.start>0&&text.charAt(w.start-1)===".")return null; // attribute access: no semantic info
+    var toks=tokenize(text);
+    if(insideStringOrComment(text,pos,toks))return null;
+    var end=pos;while(end<text.length&&/\w/.test(text.charAt(end)))end++;
+    var seen=Object.create(null),cands=[];
+    function add(n,g){if(n!==w.prefix&&n.indexOf(w.prefix)===0&&!seen[n]){seen[n]=1;cands.push({n:n,g:g})}}
+    var i,k,n;
+    for(i=0;i<toks.length;i++){
+      k=toks[i];
+      if(k.t==="i"||k.t==="f"){ if(k.a<=w.start&&k.b>=pos&&k.b>=end)continue; add(text.slice(k.a,k.b),0)}
+    }
+    for(n in KW)add(n,1);
+    for(n in BI)add(n,2);
+    cands.sort(function(x,y){return x.g-y.g||x.n.length-y.n.length||(x.n<y.n?-1:1)});
+    if(!cands.length)return null;
+    return {start:w.start,items:cands.slice(0,max).map(function(c){return c.n})};
+  }
+  function indentFor(text,pos){
+    var ls=text.lastIndexOf("\n",pos-1)+1,line=text.slice(ls,pos);
+    var ind=/^[ \t]*/.exec(line)[0];
+    var code=line.replace(/#.*$/,"").replace(/\s+$/,"");
+    if(code.charAt(code.length-1)===":")ind+="    ";
+    return ind;
+  }
+  return {tokenize:tokenize,highlight:highlight,complete:complete,indentFor:indentFor,wordAt:wordAt};
+})();
+/*CORE-END*/
+
+var $=function(i){return document.getElementById(i)};
+var ta=$("ta"),hl=$("hl"),gutter=$("gutter"),pop=$("pop"),out=$("out"),con=$("con");
+var state={dirty:false,name:"",running:false,exists:true,popStart:-1,items:[],sel:0,cw:8.4};
+
+function send(o){console.log("PSBRIDGE:"+JSON.stringify(o))}
+
+function measure(){
+  var s=document.createElement("span");s.style.cssText="font:14px monospace;position:absolute;visibility:hidden;white-space:pre";
+  s.textContent="MMMMMMMMMMMMMMMMMMMM";document.body.appendChild(s);
+  state.cw=s.getBoundingClientRect().width/20;document.body.removeChild(s);
+}
+function renderName(){
+  $("fname").innerHTML="<b>"+(state.dirty?"* ":"")+"</b>"+state.name.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+}
+function render(){
+  var text=ta.value,toks=PSCore.tokenize(text);
+  hl.innerHTML=PSCore.highlight(text,toks)+"\n";
+  var n=text.split("\n").length,g="";
+  for(var i=1;i<=n;i++)g+=i+(i<n?"\n":"");
+  gutter.textContent=g;
+  gutter.style.minWidth=((String(n).length+1)*state.cw+10)+"px";
+  return toks;
+}
+function setDirty(d){state.dirty=d;renderName()}
+
+/* ---- completion popup ---- */
+function closePop(){pop.style.display="none";state.popStart=-1;state.items=[]}
+function showPop(c){
+  state.popStart=c.start;state.items=c.items;state.sel=0;
+  pop.innerHTML="";
+  c.items.forEach(function(name,i){
+    var d=document.createElement("div");d.textContent=name;if(i===0)d.className="sel";
+    d.addEventListener("pointerdown",function(e){e.preventDefault();accept(name)});
+    pop.appendChild(d);
+  });
+  var pos=ta.selectionStart,before=ta.value.slice(0,pos);
+  var line=before.split("\n").length-1,col=pos-(before.lastIndexOf("\n")+1);
+  pop.style.left=Math.max(0,6+col*state.cw)+"px";
+  pop.style.top=(6+(line+1)*20)+"px";
+  pop.style.display="block";
+}
+function accept(name){
+  if(state.popStart<0)return;
+  ta.setRangeText(name,state.popStart,ta.selectionStart,"end");
+  closePop();render();setDirty(true);ta.focus();
+}
+function updateCompletion(){
+  if(ta.selectionStart!==ta.selectionEnd){closePop();return}
+  var c=PSCore.complete(ta.value,ta.selectionStart,6);
+  if(c)showPop(c);else closePop();
+}
+
+function insertText(s){
+  var a=ta.selectionStart,b=ta.selectionEnd;
+  ta.setRangeText(s,a,b,"end");
+  closePop();render();setDirty(true);
+}
+
+ta.addEventListener("input",function(){render();setDirty(true);updateCompletion()});
+ta.addEventListener("beforeinput",function(e){
+  if(e.inputType==="insertLineBreak"||e.inputType==="insertParagraph"){
+    e.preventDefault();
+    insertText("\n"+PSCore.indentFor(ta.value,ta.selectionStart));
+  }
+});
+ta.addEventListener("keydown",function(e){
+  if(e.key==="Escape"){closePop();return}
+  if(e.key==="Tab"){e.preventDefault();doTab()}
+  // Enter is never used to accept a suggestion
+});
+document.addEventListener("selectionchange",function(){
+  if(state.popStart>=0&&document.activeElement===ta){
+    var w=PSCore.wordAt(ta.value,ta.selectionStart);
+    if(w.start!==state.popStart||ta.selectionStart!==ta.selectionEnd)closePop();
+  }
+});
+ta.addEventListener("blur",function(){setTimeout(closePop,150)});
+$("scroller").addEventListener("scroll",function(){/* popup scrolls with content */});
+
+function doTab(){
+  if(state.popStart>=0&&state.items.length){accept(state.items[0]);return}
+  insertText("    ");
+}
+function noFocusSteal(id,fn){
+  var el=$(id);
+  el.addEventListener("pointerdown",function(e){e.preventDefault()});
+  el.addEventListener("click",fn);
+}
+noFocusSteal("tab",doTab);
+
+/* ---- toolbar actions ---- */
+function doSave(thenExit){send({op:"save",text:ta.value,then_exit:!!thenExit})}
+noFocusSteal("save",function(){doSave(false)});
+noFocusSteal("run",function(){if(!state.running)send({op:"run",text:ta.value})});
+noFocusSteal("stop",function(){send({op:"stop"})});
+noFocusSteal("tog",function(){con.style.display=(con.style.display==="none")?"flex":"none"});
+function askExit(){
+  if(!state.dirty){send({op:"exit"});return}
+  $("modal").style.display="flex";
+}
+noFocusSteal("exit",askExit);
+$("m-save").addEventListener("click",function(){$("modal").style.display="none";doSave(true)});
+$("m-disc").addEventListener("click",function(){$("modal").style.display="none";send({op:"exit"})});
+$("m-cancel").addEventListener("click",function(){$("modal").style.display="none"});
+
+/* ---- console ---- */
+function nearBottom(){return out.scrollHeight-out.scrollTop-out.clientHeight<40}
+function addOut(cls,text){
+  var stick=nearBottom(),s=document.createElement("span");
+  s.className="o-"+cls;s.textContent=text;out.appendChild(s);
+  if(stick)out.scrollTop=out.scrollHeight;
+}
+function setStatus(t){$("constatus").textContent=t}
+
+/* ---- API called from Python (evaluatejs) ---- */
+var PS={
+  load:function(text,name,exists){
+    ta.value=text;state.name=name;state.exists=exists;
+    measure();render();setDirty(false);
+    setStatus(exists?"Console":"Console - new file, created on first save");
+  },
+  saved:function(ok,msg){
+    if(ok){setDirty(false);setStatus(msg)}
+    else{addOut("bad","[save failed] "+msg+"\n");setStatus("save failed - your text is still in the editor")}
+  },
+  runStarted:function(name){
+    out.textContent="";con.style.display="flex";state.running=true;
+    $("run").style.display="none";$("stop").style.display="";
+    setStatus("running "+name+" ...");
+    addOut("note","$ python "+name+"\n");
+  },
+  out:function(kind,text){addOut(kind,text)},
+  runEnded:function(code,note){
+    state.running=false;$("run").style.display="";$("stop").style.display="none";
+    addOut(code===0?"ok":"bad","\n[process finished: "+note+"]\n");
+    setStatus("finished: "+note);
+  },
+  fail:function(msg){addOut("bad","[error] "+msg+"\n")},
+  notice:function(msg){addOut("note","[notice] "+msg+"\n")},
+  back:function(){if($("modal").style.display==="flex")$("modal").style.display="none";else askExit()}
+};
+window.onerror=function(m,u,l){addOut("bad","[editor error] "+m+" (line "+l+")\n")};
+measure();
+send({op:"ready"});
+</script></body></html>

@@ -1,0 +1,657 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+html,body{margin:0;height:100%;background:#1e1e1e;color:#d4d4d4;-webkit-text-size-adjust:100%;font-family:sans-serif}
+#app{display:flex;flex-direction:column;height:100%}
+#bar{display:flex;align-items:center;gap:4px;padding:4px;background:#252526;border-bottom:1px solid #111;flex:none;overflow-x:auto}
+#fname{flex:1 0 60px;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;padding-left:4px}
+#fname b{color:#e5c07b}
+button{flex:none;background:#3a3d41;color:#d4d4d4;border:0;border-radius:4px;padding:8px 9px;font-size:13px}
+button:active{background:#505357}
+button:disabled{opacity:.4}
+#run{background:#2d7d46;color:#fff}
+#stop{background:#a1260d;color:#fff}
+#edwrap{flex:1;min-height:0;position:relative;background:#1e1e1e}
+#editor{position:absolute;top:0;right:0;bottom:0;left:0}
+#edmsg{position:absolute;top:0;right:0;bottom:0;left:0;box-sizing:border-box;padding:16px;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow:auto}
+#edmsg.fatal{color:#f48771}
+#con{flex:none;height:35%;display:flex;flex-direction:column;background:#0c0c0c;border-top:2px solid #007acc}
+#app.kb #con{height:auto}
+#app.kb #out{display:none}
+#constatus{flex:none;padding:3px 8px;font-size:12px;color:#9da5b4;background:#1b1b1b}
+#out{flex:1;margin:0;padding:4px 8px;overflow:auto;font:13px/17px monospace;white-space:pre-wrap;word-break:break-word;
+  user-select:text;-webkit-user-select:text}
+.o-out{color:#d4d4d4}.o-err{color:#f48771}.o-note{color:#9da5b4;font-style:italic}.o-ok{color:#6a9955}.o-bad{color:#f14c4c}
+/* Extra keys bar (Termux-style), shown above soft keyboard when viewport shrinks */
+#extrakeys{display:none;flex:none;flex-direction:column;background:#1a1a1a;border-top:1px solid #333;padding:2px 0;user-select:none;-webkit-user-select:none}
+#app.kb #extrakeys{display:flex}
+#extrakeys .row{display:flex;justify-content:space-around;gap:2px;padding:1px 2px}
+#extrakeys button{flex:1;min-width:0;background:#2d2d2d;color:#e0e0e0;border:1px solid #444;border-radius:3px;padding:7px 2px;font-size:12px;font-family:sans-serif;line-height:1.1}
+#extrakeys button:active{background:#4a4a4a}
+#extrakeys button.special{background:#3a3a4a;color:#a0c0ff}
+#modal{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100000}
+#modal .box{background:#252526;padding:16px;border-radius:6px;max-width:80%}
+#modal .row{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+/* Suggest widget: hide broken codicons completely, clean full-width labels on mobile */
+.monaco-editor .suggest-widget .monaco-list-row .icon,
+.monaco-editor .suggest-widget .monaco-list-row .suggest-icon,
+.monaco-editor .suggest-widget .monaco-list-row .suggest-icon::before,
+.monaco-editor .suggest-widget .monaco-list-row .codicon,
+.monaco-editor .suggest-widget .monaco-list-row .monaco-icon-label::before {
+  display: none !important;
+  width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  content: none !important;
+}
+.monaco-editor .suggest-widget .monaco-list-row .monaco-icon-label,
+.monaco-editor .suggest-widget .monaco-list-row .monaco-icon-label-container,
+.monaco-editor .suggest-widget .monaco-list-row .monaco-icon-name-container {
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
+.monaco-editor .suggest-widget .monaco-list-row > .contents {
+  padding-left: 8px !important;
+}
+.monaco-editor .suggest-widget {
+  font-size: 15px !important;
+  line-height: 30px !important;
+  min-width: 200px !important;
+  max-width: 90vw !important;
+}
+.monaco-editor .suggest-widget .monaco-list,
+.monaco-editor .suggest-widget .monaco-list-rows {
+  line-height: 30px !important;
+}
+.monaco-editor .suggest-widget .monaco-list-row {
+  padding: 0 6px !important;
+  line-height: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  box-sizing: border-box !important;
+}
+.monaco-editor .suggest-widget .monaco-list-row > .contents,
+.monaco-editor .suggest-widget .monaco-list-row > .contents > .main,
+.monaco-editor .suggest-widget .monaco-list-row .monaco-icon-label,
+.monaco-editor .suggest-widget .monaco-list-row .monaco-highlighted-label {
+  line-height: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  overflow: visible !important;
+  display: flex !important;
+  align-items: center !important;
+}
+.monaco-editor .suggest-widget .monaco-highlighted-label .highlight {
+  color: #569cd6 !important;
+  font-weight: normal !important;
+}
+/* Soft-keyboard bootstrap: Android WebView blocks keyboard without a real user gesture */
+#taphint{display:none;position:absolute;left:0;right:0;bottom:0;z-index:50;
+  background:rgba(0,122,204,.92);color:#fff;text-align:center;padding:12px 8px;
+  font-size:14px;font-family:sans-serif;pointer-events:auto}
+#taphint.show{display:block}
+</style></head><body>
+<div id="app">
+ <div id="bar">
+  <div id="fname"></div>
+  <button id="run">Run</button><button id="stop" style="display:none">Stop</button>
+  <button id="save">Save</button><button id="tab">Tab</button>
+  <button id="undo">Undo</button><button id="redo">Redo</button><button id="find">Find</button>
+  <button id="tog">Console</button><button id="exit">Exit</button>
+ </div>
+ <div id="edwrap"><div id="editor"></div><div id="edmsg">Loading editor ...</div><div id="taphint">Tap here to start typing</div></div>
+ <div id="con"><div id="constatus">Console</div><pre id="out"></pre></div>
+ <div id="extrakeys">
+  <div class="row">
+   <button data-k="Escape" class="special">ESC</button>
+   <button data-k="/">/</button>
+   <button data-k="-">-</button>
+   <button data-k="Home">HOME</button>
+   <button data-k="ArrowUp">UP</button>
+   <button data-k="End">END</button>
+   <button data-k="PageUp">PGUP</button>
+  </div>
+  <div class="row">
+   <button data-k="Tab" class="special">TAB</button>
+   <button data-k="Control" class="special">CTRL</button>
+   <button data-k="Alt" class="special">ALT</button>
+   <button data-k="ArrowLeft">LT</button>
+   <button data-k="ArrowDown">DN</button>
+   <button data-k="ArrowRight">RT</button>
+   <button data-k="PageDown">PGDN</button>
+  </div>
+ </div>
+</div>
+<div id="modal"><div class="box"><div id="mtext">Unsaved changes.</div>
+ <div class="row"><button id="m-save">Save &amp; exit</button><button id="m-disc">Discard</button><button id="m-cancel">Cancel</button></div></div></div>
+<script>
+var $=function(i){return document.getElementById(i)};
+var out=$("out"),con=$("con"),appEl=$("app"),edmsg=$("edmsg");
+var state={dirty:false,name:"",running:false,exists:true,loaded:false,savedAlt:0,pendingAlt:null,pending:null,suppress:false,failed:false};
+var ed=null,model=null,disposables=[],extra=[];
+
+function send(o){console.log("PSBRIDGE:"+JSON.stringify(o))}
+function addOut(cls,text){
+  var stick=out.scrollHeight-out.scrollTop-out.clientHeight<40,s=document.createElement("span");
+  s.className="o-"+cls;s.textContent=text;out.appendChild(s);
+  if(stick)out.scrollTop=out.scrollHeight;
+}
+function setStatus(t){$("constatus").textContent=t}
+function renderName(){
+  var f=$("fname"),b=document.createElement("b");
+  b.textContent=state.dirty?"* ":"";
+  f.textContent="";f.appendChild(b);f.appendChild(document.createTextNode(state.name));
+}
+function setDirty(d){state.dirty=d;renderName()}
+function syncDirty(){if(model)setDirty(model.getAlternativeVersionId()!==state.savedAlt)}
+/* Live lint: ~1 s after typing stops, Python runs ast + undefined-name check */
+var lintTimer=null;
+function scheduleLint(){
+  if(lintTimer)clearTimeout(lintTimer);
+  lintTimer=setTimeout(function(){
+    lintTimer=null;
+    if(!model||state.failed)return;
+    var t=model.getValue(monaco.editor.EndOfLinePreference.LF);
+    send({op:"lint",text:t});
+  },1000);
+}
+function applyMarkers(markers){
+  if(!monaco||!model)return;
+  var list=(markers||[]).map(function(m){
+    return {
+      severity:m.severity||monaco.MarkerSeverity.Error,
+      message:m.message||"",
+      startLineNumber:m.startLineNumber||1,
+      startColumn:m.startColumn||1,
+      endLineNumber:m.endLineNumber||m.startLineNumber||1,
+      endColumn:m.endColumn||(m.startColumn||1)+1
+    };
+  });
+  monaco.editor.setModelMarkers(model,"python-studio",list);
+}
+/* The only source of editor text: the Monaco model, always LF (files.py re-applies CRLF/BOM). */
+function currentText(){
+  if(!ed||!model){addOut("bad","[error] the editor is not ready yet; nothing was sent\n");return null}
+  return model.getValue(monaco.editor.EndOfLinePreference.LF);
+}
+
+/* ---- fatal / degraded diagnostics (never leave a blank editor) ---- */
+function fatal(msg){
+  state.failed=true;
+  edmsg.className="fatal";edmsg.style.display="block";
+  edmsg.textContent="Monaco could not start.\n\n"+msg+
+    "\n\nNothing was loaded into an editor, so Save and Run are disabled to protect your file."+
+    "\nExit, then run  python-studio --fetch-monaco  and retry, or use the basic editor:  python-studio --basic-editor FILE";
+  ["run","save","tab","undo","redo","find"].forEach(function(id){$(id).disabled=true});
+  addOut("bad","[editor failed] "+msg+"\n");
+  setStatus("editor failed to start");
+}
+window.onerror=function(m,u,l){addOut("bad","[editor error] "+m+" ("+String(u||"").split("/").pop()+":"+l+")\n");return false};
+window.addEventListener("unhandledrejection",function(e){addOut("bad","[editor error] "+(e.reason&&e.reason.message||e.reason)+"\n")});
+
+/* ---- Python completion provider (keywords, builtins, names in the file) ---- */
+var KW="False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield".split(" ");
+var BI="abs aiter all anext any ascii bin bool breakpoint bytearray bytes callable chr classmethod compile complex delattr dict dir divmod enumerate eval exec filter float format frozenset getattr globals hasattr hash help hex id input int isinstance issubclass iter len list locals map max memoryview min next object oct open ord pow print property range repr reversed round set setattr slice sorted staticmethod str sum super tuple type vars zip Exception ValueError TypeError KeyError IndexError RuntimeError OSError ImportError AttributeError NameError StopIteration NotImplementedError ZeroDivisionError FileNotFoundError".split(" ");
+var DOC_SCAN_LIMIT=400000;
+function pythonProvider(){
+  return {
+    provideCompletionItems:function(m,pos,ctx){
+      var none={suggestions:[]},K=monaco.languages.CompletionItemKind;
+      var w=m.getWordUntilPosition(pos);
+      var explicit=ctx&&ctx.triggerKind===monaco.languages.CompletionTriggerKind.Invoke;
+      if(!explicit&&w.word.length<2)return none;
+      if(/^\d/.test(w.word))return none;
+      if(w.startColumn>1&&m.getLineContent(pos.lineNumber).charAt(w.startColumn-2)===".")return none; /* attribute access: no semantic info */
+      var range={startLineNumber:pos.lineNumber,endLineNumber:pos.lineNumber,startColumn:w.startColumn,endColumn:w.endColumn};
+      var seen=Object.create(null),items=[];
+      function add(label,kind,sort){
+        if(seen[label]||label.indexOf(w.word)!==0)return;
+        seen[label]=1;items.push({label:label,kind:kind,insertText:label,range:range,sortText:sort+label});
+      }
+      if(m.getValueLength()<=DOC_SCAN_LIMIT){
+        var counts=Object.create(null),re=/[A-Za-z_]\w*/g,x,txt=m.getValue();
+        while((x=re.exec(txt)))counts[x[0]]=(counts[x[0]]||0)+1;
+        Object.keys(counts).forEach(function(n){if(n===w.word&&counts[n]<2)return;add(n,K.Variable,"0")});
+      }
+      KW.forEach(function(n){add(n,K.Keyword,"1")});
+      BI.forEach(function(n){add(n,/^[A-Z]/.test(n)?K.Class:K.Function,"2")});
+      return {suggestions:items};
+    }
+  };
+}
+
+/* ---- Monaco setup ---- */
+function initEditor(){
+  if(!window.monaco)throw new Error("monaco global missing after editor.main loaded");
+  if(!monaco.languages.getLanguages().some(function(l){return l.id==="python"}))
+    throw new Error("Monaco has no 'python' language (basic-languages files missing)");
+  monaco.editor.defineTheme("ps-dark",{base:"vs-dark",inherit:true,rules:[],colors:{
+    "editor.background":"#1e1e1e","editorLineNumber.foreground":"#6e7681","editorCursor.foreground":"#ffffff"}});
+  ed=monaco.editor.create($("editor"),{
+    model:null,language:"python",theme:"ps-dark",automaticLayout:true,
+    fontSize:14,lineHeight:20,fontFamily:"monospace",
+    minimap:{enabled:false},lineNumbers:"on",renderLineHighlight:"all",glyphMargin:false,
+    lineNumbersMinChars:3,lineDecorationsWidth:6,padding:{top:6,bottom:6},
+    tabSize:4,insertSpaces:true,detectIndentation:false,autoIndent:"full",
+    matchBrackets:"always",bracketPairColorization:{enabled:true},guides:{bracketPairs:true,indentation:true},
+    folding:true,foldingStrategy:"indentation",
+    autoClosingBrackets:"languageDefined",autoClosingQuotes:"languageDefined",autoSurround:"languageDefined",
+    multiCursorModifier:"alt",scrollBeyondLastLine:false,wordWrap:"off",stickyScroll:{enabled:false},
+    quickSuggestions:{other:true,comments:false,strings:false},suggestOnTriggerCharacters:true,
+    acceptSuggestionOnEnter:"off", /* Enter inserts a newline with auto-indent; Tab (or a tap) accepts */
+    wordBasedSuggestions:"off",    /* the provider below also offers the file's own names */
+    suggest:{showIcons:false,preview:false,showStatusBar:false,insertMode:"replace"},
+    suggestLineHeight:30, /* taller rows so text is not clipped at the bottom on mobile */
+    contextmenu:false,fixedOverflowWidgets:true,smoothScrolling:false,
+    scrollbar:{verticalScrollbarSize:10,horizontalScrollbarSize:10,useShadows:false,alwaysConsumeMouseWheel:false}
+  });
+  disposables.push(ed);
+  disposables.push(monaco.languages.registerCompletionItemProvider("python",pythonProvider()));
+  /* hardware-keyboard shortcuts (new; the toolbar buttons remain the primary path) */
+  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.KeyS,function(){doSave(false)});
+  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.Enter,function(){doRun()});
+  /* extension point for a future custom (e.g. LLM) completion provider: no editor changes needed */
+  window.PSEditor={
+    monaco:monaco,
+    editor:function(){return ed},
+    model:function(){return model},
+    registerCompletionProvider:function(provider,language){
+      var d=monaco.languages.registerCompletionItemProvider(language||"python",provider);
+      extra.push(d);return d;
+    }
+  };
+  edmsg.style.display="none";
+  setStatus("Console");
+  if(state.pending){var p=state.pending;state.pending=null;applyDoc(p.text,p.name,p.exists)}
+}
+
+function applyDoc(text,name,exists){
+  if(state.loaded&&state.dirty){addOut("note","[reload ignored: the editor has unsaved edits]\n");return}
+  state.name=name;state.exists=exists;
+  state.suppress=true;
+  try{
+    if(!model){
+      model=monaco.editor.createModel(text,"python",monaco.Uri.from({scheme:"file",path:"/"+name}));
+      model.updateOptions({tabSize:4,insertSpaces:true});
+      ed.setModel(model);
+      disposables.push(model);
+      disposables.push(model.onDidChangeContent(function(){
+        if(!state.suppress){syncDirty();scheduleLint()}
+      }));
+    }else{
+      model.setValue(text);
+    }
+    model.setEOL(monaco.editor.EndOfLineSequence.LF);
+  }finally{state.suppress=false}
+  state.savedAlt=model.getAlternativeVersionId();state.pendingAlt=null;state.loaded=true;
+  ed.setScrollPosition({scrollTop:0,scrollLeft:0});ed.setPosition({lineNumber:1,column:1});
+  setDirty(false);
+  setStatus(exists?"Console":"Console - new file, created on first save");
+  /* auto-focus so the soft keyboard opens on first open (user does not need to tap Tab) */
+  focusEditorSoon();
+  scheduleLint();
+}
+
+/* Force soft keyboard open. Android WebView usually ignores programmatic focus
+   without a user gesture, so we also show a one-time "Tap here to start typing"
+   banner that focuses on the first real tap. */
+function hideTapHint(){
+  var h=$("taphint");if(h)h.className="";
+}
+function focusEditorSoon(){
+  function tryFocus(){
+    if(!ed)return;
+    ed.focus();
+    try{
+      var ta=ed.getDomNode()&&ed.getDomNode().querySelector("textarea.inputarea");
+      if(ta){ta.focus();ta.click()}
+    }catch(e){}
+  }
+  setTimeout(tryFocus,30);
+  setTimeout(tryFocus,150);
+  setTimeout(function(){
+    tryFocus();
+    /* if still no text focus, show the hint so the user is not stuck */
+    if(ed&&!ed.hasTextFocus()){
+      var h=$("taphint");if(h)h.className="show";
+    }
+  },500);
+}
+(function(){
+  var wrap=$("edwrap");
+  if(!wrap)return;
+  wrap.addEventListener("pointerdown",function(){
+    hideTapHint();
+    if(ed){ed.focus();
+      try{var ta=ed.getDomNode()&&ed.getDomNode().querySelector("textarea.inputarea");
+        if(ta)ta.focus()}catch(e){}
+    }
+  },true);
+})();
+
+/* ---- Monaco delivery -------------------------------------------------------------------
+   This page comes from WebView.setdata(): it has no URL, so Monaco cannot be fetched. Python
+   pushes the files with PS.assetsBegin / assetChunk / assetsEnd; we verify and execute them.
+   Monaco's AMD files use named define() calls, so executing each file registers its modules and
+   the loader never has to fetch anything. Web Workers are impossible here (opaque origin), so
+   getWorker throws on purpose and Monaco uses its documented main-thread fallback. */
+var assets={state:"waiting",skip:false,manifest:null,parts:null,got:0,total:0,requests:[],createPlain:null};
+var MISSING_BASE="file:///ps-bundled/vs"; /* never reachable: file:// is disabled in Termux:GUI; a missing module fails fast, locally */
+function adler32(u8){
+  var a=1,b=0,i=0,n=u8.length,k;
+  while(i<n){k=Math.min(5552,n-i);while(k--){a+=u8[i++];b+=a}a%=65521;b%=65521}
+  return((b<<16)|a)>>>0;
+}
+function decodeFile(m,parts){
+  if(parts.length!==m.chunks)throw new Error(m.name+": expected "+m.chunks+" chunks");
+  var out=new Uint8Array(m.size),pos=0,i,j,bin;
+  for(i=0;i<parts.length;i++){
+    if(typeof parts[i]!=="string")throw new Error(m.name+": chunk "+i+" never arrived");
+    bin=atob(parts[i]);
+    if(pos+bin.length>m.size)throw new Error(m.name+": more data than announced");
+    for(j=0;j<bin.length;j++)out[pos++]=bin.charCodeAt(j);
+  }
+  if(pos!==m.size)throw new Error(m.name+": got "+pos+" of "+m.size+" bytes");
+  if(adler32(out)!==m.adler)throw new Error(m.name+": checksum mismatch (data damaged in transit)");
+  return new TextDecoder("utf-8").decode(out);
+}
+/* The loader may ask for a script or stylesheet by URL. Nothing can be fetched here (file:// is disabled in
+   Termux:GUI and WebView may drop the request without any event), so every such request is recorded, shown in the
+   console, and answered at once: scripts get an "error" event (the loader then names the module), stylesheets get a
+   "load" event (our CSS is already applied through the data: link below). No silent waiting. */
+function hookElement(el,t){
+  var key=t==="script"?"src":"href",nativeSet=el.setAttribute.bind(el);
+  function intercept(v){
+    v=String(v);
+    if(v.indexOf("data:")===0)return false;
+    assets.requests.push(t+" "+v);
+    addOut("note","[loader asked for "+t+"] "+v+"\n");
+    setTimeout(function(){el.dispatchEvent(new Event(t==="script"?"error":"load"))},0);
+    return true;
+  }
+  el.setAttribute=function(k,v){if(k===key&&intercept(v))return;return nativeSet(k,v)};
+  try{Object.defineProperty(el,key,{configurable:true,
+    set:function(v){if(!intercept(v))nativeSet(key,v)},
+    get:function(){return el.getAttribute?el.getAttribute(key):""}})}catch(e){}
+}
+function installHooks(){
+  if(assets.createPlain)return;
+  var orig=document.createElement.bind(document);
+  assets.createPlain=orig;
+  document.createElement=function(tag){
+    var el=orig(tag),t=String(tag).toLowerCase();
+    if(t==="script"||t==="link")hookElement(el,t);
+    return el;
+  };
+}
+function stallMessage(){
+  var m="Monaco's loader did not finish. Files it asked for: "+
+    (assets.requests.length?assets.requests.join(", "):"none (it is waiting for a module that no bundled file defines, or a module threw)")+".";
+  try{
+    if(window.require&&typeof window.require.getStats==="function"){
+      var st=window.require.getStats(),tail=st.slice(-4).map(function(e){return e.type+":"+String(e.detail).slice(0,60)});
+      m+=" Loader trace (last): "+tail.join(" | ");
+    }
+  }catch(e){}
+  return m;
+}
+function runBundle(){
+  assets.state="running";
+  setStatus("starting editor ...");
+  var texts=assets.manifest.map(function(m,i){return decodeFile(m,assets.parts[i])});
+  assets.parts=null;
+  window.MonacoEnvironment={getWorker:function(){
+    throw new Error("Web Workers are not available in a setData() page (opaque origin)");}};
+  installHooks();
+  var css=null,late=[];
+  function exec(m,text){
+    try{(0,eval)(text+"\n//# sourceURL=psbundle/"+m.name)}
+    catch(e){throw new Error("executing "+m.name+" failed: "+(e&&e.message||e))}
+  }
+  /* Language files (vs/basic-languages/*) run their factory at define() time and need
+     vs/editor/editor.api, which only exists once editor.main has been resolved: run them afterwards. */
+  assets.manifest.forEach(function(m,i){
+    if(m.kind==="css")css=texts[i];
+    else if(m.name.indexOf("vs/basic-languages/")===0)late.push([m,texts[i]]);
+    else exec(m,texts[i]);
+  });
+  if(typeof window.require!=="function"||typeof window.require.config!=="function")
+    throw new Error("vs/loader.js did not define require()");
+  if(css!==null){ /* the css loader plugin looks for a <link data-name="vs/editor/editor.main"> */
+    var l=assets.createPlain("link");
+    l.rel="stylesheet";l.setAttribute("data-name","vs/editor/editor.main");
+    l.setAttribute("href","data:text/css;charset=utf-8,"+encodeURIComponent(css));
+    document.head.appendChild(l);
+  }
+  window.require.onError=function(err){
+    addOut("bad","[loader error] "+(err&&(err.message||err.requireType)||err)+(err&&err.moduleId?" ("+err.moduleId+")":"")+"\n");
+  };
+  window.require.config({paths:{vs:MISSING_BASE},"vs/nls":{availableLanguages:{}},catchError:true});
+  window.require(["vs/editor/editor.main"],function(){
+    assets.state="done";
+    try{late.forEach(function(x){exec(x[0],x[1])});initEditor()}catch(e){fatal(e.message||String(e))}
+  },function(err){
+    fatal("module loading failed: "+(err&&(err.message||err.requireType)||err)+
+      (err&&err.moduleId?" (module "+err.moduleId+" is not in the bundle)":""));
+  });
+  setTimeout(function(){if(assets.state==="running"&&!state.failed)fatal(stallMessage())},window.PS_STALL_MS||15000);
+  addOut("note","[notice] Monaco runs without Web Workers (the Termux:GUI page has no origin); word/diff/link helpers run on the main thread.\n");
+}
+function setProgress(){edmsg.textContent="Loading editor ... "+Math.round(100*assets.got/Math.max(1,assets.total))+"%"}
+var assetTimer=setTimeout(function(){
+  if(assets.state!=="done"&&!state.failed)
+    fatal(assets.state==="running"?"timed out after 40 s. "+stallMessage()
+      :"timed out after 40 s waiting for the editor files from Python (state: "+assets.state+
+       (assets.state==="receiving"?", "+assets.got+" of "+assets.total+" chunks":"")+")");
+},40000);
+
+/* ---- toolbar ---- */
+function noFocusSteal(id,fn){
+  var el=$(id);
+  el.addEventListener("pointerdown",function(e){e.preventDefault()});
+  el.addEventListener("click",function(){if(!el.disabled)fn()});
+}
+function suggestVisible(){return !!document.querySelector(".suggest-widget.visible")} /* DOM heuristic: Monaco exposes no public query */
+function doTab(){
+  if(!ed)return;
+  ed.focus();
+  ed.trigger("toolbar",suggestVisible()?"acceptSelectedSuggestion":"tab",null);
+}
+function doSave(thenExit){
+  var t=currentText();if(t===null)return;
+  state.pendingAlt=model.getAlternativeVersionId();
+  send({op:"save",text:t,then_exit:!!thenExit});
+}
+function doRun(){
+  if(state.running)return;
+  var t=currentText();if(t===null)return;
+  state.pendingAlt=model.getAlternativeVersionId();
+  send({op:"run",text:t});
+}
+function askExit(){
+  if(!state.dirty){send({op:"exit"});return}
+  $("modal").style.display="flex";
+}
+noFocusSteal("run",doRun);
+noFocusSteal("stop",function(){send({op:"stop"})});
+noFocusSteal("save",function(){doSave(false)});
+noFocusSteal("tab",doTab);
+noFocusSteal("undo",function(){if(ed){ed.focus();ed.trigger("toolbar","undo",null)}});
+noFocusSteal("redo",function(){if(ed){ed.focus();ed.trigger("toolbar","redo",null)}});
+noFocusSteal("find",function(){if(ed){ed.focus();ed.trigger("toolbar","actions.find",null)}});
+function toggleConsole(){
+  var show=con.style.display==="none";
+  con.style.display=show?"flex":"none";
+  $("tog").style.background=show?"":"#007acc";
+  $("tog").style.color=show?"":"#fff";
+  if(ed)ed.layout();
+}
+noFocusSteal("tog",toggleConsole);
+noFocusSteal("exit",askExit);
+$("m-save").addEventListener("click",function(){$("modal").style.display="none";doSave(true)});
+$("m-disc").addEventListener("click",function(){$("modal").style.display="none";send({op:"exit"})});
+$("m-cancel").addEventListener("click",function(){$("modal").style.display="none"});
+
+/* ---- Extra keys bar (Termux-style): arrows navigate suggestions or cursor; ESC closes widget ---- */
+var modState={ctrl:false,alt:false};
+function clearMods(){modState.ctrl=false;modState.alt=false;
+  document.querySelectorAll("#extrakeys button.special").forEach(function(b){
+    if(b.getAttribute("data-k")==="Control"||b.getAttribute("data-k")==="Alt")b.style.background="";
+  });
+}
+function pressExtra(key){
+  if(!ed)return;
+  ed.focus();
+  var sv=suggestVisible();
+  if(key==="Tab"){doTab();return}
+  if(key==="Escape"){
+    if(sv)ed.trigger("extrakeys","hideSuggestWidget",null);
+    else ed.trigger("extrakeys","cancelSelection",null);
+    clearMods();return;
+  }
+  if(key==="Control"){
+    modState.ctrl=!modState.ctrl;
+    var b=document.querySelector('#extrakeys button[data-k="Control"]');
+    if(b)b.style.background=modState.ctrl?"#5a5a8a":"";
+    return;
+  }
+  if(key==="Alt"){
+    modState.alt=!modState.alt;
+    var b=document.querySelector('#extrakeys button[data-k="Alt"]');
+    if(b)b.style.background=modState.alt?"#5a5a8a":"";
+    return;
+  }
+  if(sv){
+    if(key==="ArrowDown"){ed.trigger("extrakeys","selectNextSuggestion",null);return}
+    if(key==="ArrowUp"){ed.trigger("extrakeys","selectPrevSuggestion",null);return}
+    if(key==="ArrowRight"||key==="Enter"){ed.trigger("extrakeys","acceptSelectedSuggestion",null);return}
+  }
+  /* cursor movement / insert */
+  var cmd=null;
+  if(key==="ArrowLeft")cmd=modState.ctrl?"cursorWordLeft":"cursorLeft";
+  else if(key==="ArrowRight")cmd=modState.ctrl?"cursorWordRight":"cursorRight";
+  else if(key==="ArrowUp")cmd="cursorUp";
+  else if(key==="ArrowDown")cmd="cursorDown";
+  else if(key==="Home")cmd=modState.ctrl?"cursorTop":"cursorHome";
+  else if(key==="End")cmd=modState.ctrl?"cursorBottom":"cursorEnd";
+  else if(key==="PageUp")cmd="cursorPageUp";
+  else if(key==="PageDown")cmd="cursorPageDown";
+  else if(key==="/"||key==="-"){
+    ed.trigger("keyboard","type",{text:key});
+    clearMods();return;
+  }
+  if(cmd){
+    ed.trigger("extrakeys",cmd,null);
+    clearMods();
+  }
+}
+(function(){
+  var ek=$("extrakeys");
+  if(!ek)return;
+  ek.addEventListener("pointerdown",function(e){
+    e.preventDefault(); /* keep editor focused / keyboard open */
+    var t=e.target;
+    if(t&&t.getAttribute&&t.getAttribute("data-k"))pressExtra(t.getAttribute("data-k"));
+  });
+})();
+
+/* ---- soft keyboard: with setinputmode("resize") the viewport shrinks; collapse the console to its status line ---- */
+var kb={w:0,h:0};
+function onViewport(){
+  var w=window.innerWidth,h=window.innerHeight;
+  if(w!==kb.w){kb.w=w;kb.h=h}else if(h>kb.h)kb.h=h;
+  appEl.className=(h<kb.h*0.75)?"kb":"";
+  if(ed)ed.layout();
+}
+window.addEventListener("resize",onViewport);
+onViewport();
+
+/* ---- Pinch-to-zoom font size (Termux-style two-finger zoom) ---- */
+var fontSz=14, pinch={active:false,startDist:0,startSz:14};
+function dist(t){
+  var dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+function applyFont(sz){
+  fontSz=Math.max(10,Math.min(32,Math.round(sz)));
+  if(!ed)return;
+  var lh=Math.round(fontSz*1.45);
+  ed.updateOptions({fontSize:fontSz,lineHeight:lh,suggestLineHeight:Math.max(24,lh+4)});
+  ed.layout();
+}
+(function(){
+  var el=$("edwrap");if(!el)return;
+  el.addEventListener("touchstart",function(e){
+    if(e.touches.length===2){
+      pinch.active=true;pinch.startDist=dist(e.touches);pinch.startSz=fontSz;
+    }
+  },{passive:true});
+  el.addEventListener("touchmove",function(e){
+    if(!pinch.active||e.touches.length!==2)return;
+    e.preventDefault();
+    var d=dist(e.touches);
+    if(pinch.startDist>0)applyFont(pinch.startSz*(d/pinch.startDist));
+  },{passive:false});
+  el.addEventListener("touchend",function(e){
+    if(e.touches.length<2)pinch.active=false;
+  },{passive:true});
+  el.addEventListener("touchcancel",function(){pinch.active=false},{passive:true});
+})();
+
+function blurEditor(){if(ed&&ed.hasTextFocus()&&document.activeElement)document.activeElement.blur()}
+
+/* ---- API called from Python (evaluatejs) -- names and arguments unchanged ---- */
+var PS={
+  load:function(text,name,exists){
+    state.name=name;
+    if(!ed){state.pending={text:text,name:name,exists:exists};renderName();return}
+    applyDoc(text,name,exists);
+  },
+  saved:function(ok,msg){
+    if(ok){
+      state.savedAlt=state.pendingAlt!==null?state.pendingAlt:(model?model.getAlternativeVersionId():0);
+      state.pendingAlt=null;syncDirty();setStatus(msg);
+    }else{addOut("bad","[save failed] "+msg+"\n");setStatus("save failed - your text is still in the editor")}
+  },
+  runStarted:function(name){
+    out.textContent="";con.style.display="flex";state.running=true;
+    $("run").style.display="none";$("stop").style.display="";
+    $("tog").style.background="";$("tog").style.color=""; /* console is visible */
+    blurEditor(); /* close the keyboard so the output is visible */
+    setStatus("running "+name+" ...");
+    addOut("note","$ python "+name+"\n");
+  },
+  out:function(kind,text){addOut(kind,text)},
+  runEnded:function(code,note){
+    state.running=false;$("run").style.display="";$("stop").style.display="none";
+    addOut(code===0?"ok":"bad","\n[process finished: "+note+"]\n");
+    setStatus("finished: "+note);
+  },
+  fail:function(msg){addOut("bad","[error] "+msg+"\n")},
+  notice:function(msg){addOut("note","[notice] "+msg+"\n")},
+  markers:function(list){applyMarkers(list)},
+  assetsBegin:function(manifest){
+    if(assets.state!=="waiting"){assets.skip=true;return} /* repeated ready: already have them */
+    assets.skip=false;assets.manifest=manifest;assets.state="receiving";assets.got=0;
+    assets.parts=manifest.map(function(m){return new Array(m.chunks)});
+    assets.total=manifest.reduce(function(n,m){return n+m.chunks},0);setProgress();
+  },
+  assetChunk:function(fi,ci,b64){
+    if(assets.skip||assets.state!=="receiving")return;
+    assets.parts[fi][ci]=b64;assets.got++;setProgress();
+  },
+  assetsEnd:function(){
+    if(assets.skip||assets.state!=="receiving")return;
+    try{runBundle()}catch(e){clearTimeout(assetTimer);fatal(e.message||String(e))}
+  },
+  back:function(){if($("modal").style.display==="flex")$("modal").style.display="none";else askExit()}
+};
+window.addEventListener("pagehide",function(){
+  extra.splice(0).forEach(function(d){d.dispose()});
+  disposables.splice(0).reverse().forEach(function(d){try{d.dispose()}catch(e){}});
+  ed=null;model=null;
+});
+
+send({op:"ready"});  /* page is alive; Python pushes Monaco, then PS.load(...), applied once Monaco is up */
+</script></body></html>
