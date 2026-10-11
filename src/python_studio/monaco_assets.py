@@ -3,7 +3,7 @@
 Monaco is the official `monaco-editor` npm package, AMD build (`min/vs`), pinned
 to MONACO_VERSION. At launch monaco_bundle.py sends the needed files to the WebView through
 the Termux:GUI bridge (the WebView cannot load them from a URL; see that module). Nothing is downloaded at application start; the only network
-access in this project is `python-studio --fetch-monaco` (or
+access in this project is `pyo --fetch-monaco` (or
 `scripts/fetch_monaco.py`), which the user runs once.
 
 Lookup order for the assets directory (the directory that contains `vs/`):
@@ -95,9 +95,9 @@ def describe_missing() -> str:
     lines += [
         "",
         "Download them once (needs internet, about 15 MB):",
-        "    python-studio --fetch-monaco",
+        "    pyo --fetch-monaco",
         "or run the basic textarea editor instead (no Monaco):",
-        "    python-studio --basic-editor FILE",
+        "    pyo --basic-editor FILE",
     ]
     return "\n".join(lines)
 
@@ -236,7 +236,7 @@ def fetch_main(argv: Optional[list] = None) -> int:
     try:
         fetch(bundled_dir() if args.bundle else args.dest)
     except AssetError as exc:
-        print(f"python-studio: {exc}", file=sys.stderr)
+        print(f"pyo: {exc}", file=sys.stderr)
         return 1
     return 0
 

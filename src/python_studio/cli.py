@@ -1,4 +1,4 @@
-"""`python-studio` command-line entry point."""
+"""`pyo` command-line entry point."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def main(
     confirm: Callable[[str], bool] = _confirm_create,
 ) -> int:
     parser = argparse.ArgumentParser(
-        prog="python-studio",
+        prog="pyo",
         description="Full-screen Python editor (Monaco) for Termux (Termux:GUI).",
     )
     parser.add_argument("file", nargs="?", help="Python file to edit (created on first save if new)")
@@ -35,7 +35,7 @@ def main(
                         help="use the basic textarea editor instead of Monaco (deliberate fallback)")
     parser.add_argument("--fetch-monaco", action="store_true",
                         help="download the Monaco Editor runtime once (the only network use), then exit")
-    parser.add_argument("--version", action="version", version=f"python-studio {__version__}")
+    parser.add_argument("--version", action="version", version=f"pyo {__version__}")
     args = parser.parse_args(argv)
 
     if args.fetch_monaco:
@@ -49,11 +49,11 @@ def main(
         path = resolve_path(args.file, os.getcwd())
         if not os.path.exists(path):
             if not confirm(path):
-                print(f"python-studio: {path} does not exist; not creating it.", file=sys.stderr)
+                print(f"pyo: {path} does not exist; not creating it.", file=sys.stderr)
                 return 1
         doc = Document.open(path)
     except FileError as exc:
-        print(f"python-studio: {exc}", file=sys.stderr)
+        print(f"pyo: {exc}", file=sys.stderr)
         return 1
 
     if run_gui is None:

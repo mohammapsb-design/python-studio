@@ -28,7 +28,7 @@ Python Studio is an **experimental** full-screen Python editor for **Android Ter
 
 Typical flow:
 
-1. You run `python-studio path/to/file.py` in Termux.
+1. You run `pyo path/to/file.py` in Termux.
 2. A GUI window opens with toolbar, editor, and console.
 3. You edit, optionally see live red error markers, then **Run**.
 4. Closing the activity returns you to the Termux shell.
@@ -67,7 +67,7 @@ Installed automatically by `pip install .`.
 | Site | https://microsoft.github.io/monaco-editor/ |
 | Repo | https://github.com/microsoft/monaco-editor |
 | License | MIT (Microsoft) |
-| How this app uses it | Official `monaco-editor` npm tarball is fetched **once** by `python-studio --fetch-monaco`, verified against the npm registry checksum, and stored under `~/.local/share/python-studio/monaco`. Only the AMD `min/vs` tree is kept. |
+| How this app uses it | Official `monaco-editor` npm tarball is fetched **once** by `pyo --fetch-monaco`, verified against the npm registry checksum, and stored under `~/.local/share/python-studio/monaco`. Only the AMD `min/vs` tree is kept. |
 | Size | Download on the order of **~15 MB**; on-disk usable tree roughly **~4–5 MB**. Each editor launch pushes that tree into the WebView over the local Termux:GUI bridge (no public HTTP server). |
 
 Without Monaco, the program exits with code **3** unless you pass `--basic-editor`.
@@ -100,10 +100,10 @@ pkg update && pkg install python
 cd python-studio
 pip install .
 
-python-studio --fetch-monaco    # once; needs network
-python-studio --version
+pyo --fetch-monaco    # once; needs network
+pyo --version
 echo 'print("hello from studio")' > hello.py
-python-studio hello.py
+pyo hello.py
 ```
 
 ### 4.2 Editable install (development)
@@ -133,10 +133,10 @@ Monaco is **not** committed to git by default (see `.gitignore`); only `assets/m
 
 ## 5. Command-line interface
 
-Entry point: `python-studio` → `python_studio.cli:main`.
+Entry point: `pyo` → `python_studio.cli:main`.
 
 ```text
-usage: python-studio [-h] [--basic-editor] [--fetch-monaco] [--version] [file]
+usage: pyo [-h] [--basic-editor] [--fetch-monaco] [--version] [file]
 ```
 
 | Argument / flag | Description |
@@ -150,11 +150,11 @@ usage: python-studio [-h] [--basic-editor] [--fetch-monaco] [--version] [file]
 ### Examples
 
 ```bash
-python-studio script.py
-python-studio ~/projects/app/main.py
-python-studio --basic-editor notes.py
-python-studio --fetch-monaco
-python-studio --version
+pyo script.py
+pyo ~/projects/app/main.py
+pyo --basic-editor notes.py
+pyo --fetch-monaco
+pyo --version
 ```
 
 ### Exit codes (practical)
@@ -201,7 +201,7 @@ About **one second** after typing pauses, the page sends the buffer to Python (`
 - **Program input (stdin):** while a program runs, an input row appears under the output. *Send* (or Enter) sends one line to `input()` / `sys.stdin`; *EOF* closes stdin (like Ctrl-D). Typed lines are echoed in the console. Input goes through a small writer thread, so a program that never reads its input cannot freeze the GUI  
 - **Output limit:** the console keeps the first 1,000,000 bytes of a run and says so once. A program that keeps printing far past that (more than 64 MiB discarded) is stopped automatically instead of burning CPU in the background  
 - **Stop:** SIGTERM to the program's process group, SIGKILL to the whole group after 2 s (also when the main process already exited but a child ignored SIGTERM). Leaving the IDE (Exit, Back, `kill`, closing the Termux session) stops the program synchronously, so nothing keeps running afterwards  
-- **Memory cap (optional):** `PSTUDIO_MEM_MB=<n> python-studio file.py` limits the program's address space (`ulimit -v`). Off by default because libraries such as numpy reserve a lot of address space  
+- **Memory cap (optional):** `PSTUDIO_MEM_MB=<n> pyo file.py` limits the program's address space (`ulimit -v`). Off by default because libraries such as numpy reserve a lot of address space  
 
 ### 6.5 Not implemented
 
@@ -216,7 +216,7 @@ About **one second** after typing pauses, the page sends the buffer to Python (`
 
 ```text
 Termux shell
-    └── python-studio (CLI)
+    └── pyo (CLI)
             └── app.py  →  Termux:GUI Activity + WebView
                     ├── setData(editor HTML)
                     ├── evaluateJS → push Monaco chunks, then PS.load(...)
@@ -240,7 +240,7 @@ More historical detail about failed HTTP approaches is preserved in older notes;
 
 ## 8. Security and trust boundaries
 
-- **Only network use:** `python-studio --fetch-monaco` (HTTPS npm tarball + registry checksum check). Editing and running are offline with respect to the public internet.  
+- **Only network use:** `pyo --fetch-monaco` (HTTPS npm tarball + registry checksum check). Editing and running are offline with respect to the public internet.  
 - **Running your code:** **Run** saves the buffer to the chosen file, then executes it with the same Python that launched the studio. That is equivalent in power to running `python yourfile.py` yourself.  
 - **WebView:** executes the bundled page and the Monaco scripts that were delivered from your local Monaco directory (integrity checked with size + Adler-32 against corruption in transit, not against a malicious local replace). Anyone who can write to the Monaco install dir can change what the WebView executes.  
 - **AI-generated code:** treat the whole repository as untrusted until you review it. Do not run it on devices or accounts you cannot afford to expose.

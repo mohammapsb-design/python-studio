@@ -3,7 +3,7 @@
 > **Experimental.** Full-screen Python editor on Android via [Termux:GUI](https://github.com/termux/termux-gui) and the [Monaco Editor](https://microsoft.github.io/monaco-editor/) (the engine behind VS Code).
 
 ```bash
-python-studio hello.py
+pyo hello.py
 ```
 
 Edit, Run, live syntax / undefined-name markers, soft-keyboard extra keys (Termux-style), pinch-to-zoom, and a toggleable console.
@@ -30,7 +30,7 @@ See the MIT License in `LICENSE` and the longer technical notes in [`DOCUMENTATI
 | [Termux](https://termux.dev/) | Android terminal |
 | [Termux:GUI](https://github.com/termux/termux-gui) | Same source as your Termux app (F-Droid or GitHub). Open it once. |
 | Python 3.8+ | `pkg install python` |
-| Network (once) | Only for `python-studio --fetch-monaco` (~15 MB) |
+| Network (once) | Only for `pyo --fetch-monaco` (~15 MB) |
 
 Python dependency (installed by pip): [`termuxgui`](https://pypi.org/project/termuxgui/) ≥ 0.1.5.
 
@@ -47,11 +47,11 @@ cd python-studio
 pip install .
 
 # 3. One-time Monaco download (offline after this)
-python-studio --fetch-monaco
+pyo --fetch-monaco
 
 # 4. Run
 echo 'print("hello")' > hello.py
-python-studio hello.py
+pyo hello.py
 ```
 
 Update later with `pip install -U .` from the project directory.
@@ -61,11 +61,11 @@ Update later with `pip install -U .` from the project directory.
 ## Common commands
 
 ```bash
-python-studio hello.py              # open file in Monaco editor
-python-studio --basic-editor f.py   # lightweight editor (no Monaco)
-python-studio --fetch-monaco        # download Monaco runtime, then exit
-python-studio --version
-python-studio --help
+pyo hello.py              # open file in Monaco editor
+pyo --basic-editor f.py   # lightweight editor (no Monaco)
+pyo --fetch-monaco        # download Monaco runtime, then exit
+pyo --version
+pyo --help
 ```
 
 ---

@@ -133,7 +133,7 @@ class Controller:
         try:
             getattr(self, "_op_" + msg["op"])(msg)
         except Exception as exc:  # never swallow silently: show in the console
-            print(f"python-studio: internal error: {exc!r}", file=sys.stderr)
+            print(f"pyo: internal error: {exc!r}", file=sys.stderr)
             self._eval_js(js_call("fail", f"internal error: {exc!r}"))
 
     def _push_assets(self) -> None:

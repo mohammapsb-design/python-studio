@@ -189,7 +189,7 @@ function fatal(msg){
   edmsg.className="fatal";edmsg.style.display="block";
   edmsg.textContent="Monaco could not start.\n\n"+msg+
     "\n\nNothing was loaded into an editor, so Save and Run are disabled to protect your file."+
-    "\nExit, then run  python-studio --fetch-monaco  and retry, or use the basic editor:  python-studio --basic-editor FILE";
+    "\nExit, then run  pyo --fetch-monaco  and retry, or use the basic editor:  pyo --basic-editor FILE";
   ["run","save","tab","undo","redo","find"].forEach(function(id){$(id).disabled=true});
   addOut("bad","[editor failed] "+msg+"\n");
   setStatus("editor failed to start");

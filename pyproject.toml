@@ -12,7 +12,7 @@ license = { text = "MIT" }
 dependencies = ["termuxgui>=0.1.5"]
 
 [project.scripts]
-python-studio = "python_studio.cli:main"
+pyo = "python_studio.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

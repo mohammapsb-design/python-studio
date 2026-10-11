@@ -77,7 +77,7 @@ def run(doc: Document, basic_editor: bool = False) -> int:
         import termuxgui as tg
     except ModuleNotFoundError:
         print(
-            "python-studio: the 'termuxgui' module is missing.\n"
+            "pyo: the 'termuxgui' module is missing.\n"
             "Install it with:  pip install termuxgui\n"
             "(You also need the Termux:GUI Android app, see the README.)",
             file=sys.stderr,
@@ -92,19 +92,19 @@ def run(doc: Document, basic_editor: bool = False) -> int:
     else:
         assets = monaco_assets.find_assets()
         if assets is None:
-            print("python-studio: " + monaco_assets.describe_missing(), file=sys.stderr)
+            print("pyo: " + monaco_assets.describe_missing(), file=sys.stderr)
             return 3
         try:
             bundle = AssetBundle.build(assets.path)  # read + validate before touching the GUI
         except monaco_assets.AssetError as exc:
-            print(f"python-studio: {exc}", file=sys.stderr)
+            print(f"pyo: {exc}", file=sys.stderr)
             return 3
         html = load_editor_html("editor.html")
 
     try:
         conn_cm = tg.Connection()
     except Exception as exc:  # the library raises RuntimeError with its own hint
-        print(f"python-studio: cannot connect to Termux:GUI: {exc}", file=sys.stderr)
+        print(f"pyo: cannot connect to Termux:GUI: {exc}", file=sys.stderr)
         return 2
 
     gui_lock = threading.Lock()  # the bindings need GUI calls serialised between threads
@@ -141,7 +141,7 @@ def run(doc: Document, basic_editor: bool = False) -> int:
                 except Exception as exc:
                     if repr(exc) != last_error:  # do not print the same failure 20 times a second
                         last_error = repr(exc)
-                        print(f"python-studio: output pump failed: {exc!r}", file=sys.stderr)
+                        print(f"pyo: output pump failed: {exc!r}", file=sys.stderr)
                 time.sleep(PUMP_INTERVAL)
 
         threading.Thread(target=pump, daemon=True).start()
@@ -154,7 +154,7 @@ def run(doc: Document, basic_editor: bool = False) -> int:
         def watchdog() -> None:
             if not ready.wait(READY_TIMEOUT):
                 print(
-                    "python-studio: the editor page did not start within "
+                    "pyo: the editor page did not start within "
                     f"{READY_TIMEOUT:.0f} s (JavaScript denied, or the WebView failed to load). "
                     "Run again and tap 'allow Javascript'.",
                     file=sys.stderr,
@@ -177,7 +177,7 @@ def run(doc: Document, basic_editor: bool = False) -> int:
                 elif ev.type == tg.Event.back:
                     eval_js("PS.back();")
                 elif ev.type == tg.Event.webviewDestroyed:
-                    print("python-studio: Android killed the WebView process.", file=sys.stderr)
+                    print("pyo: Android killed the WebView process.", file=sys.stderr)
                     exit_code = 4
                     break
                 elif ev.type == tg.Event.destroy:

@@ -110,13 +110,13 @@ class AssetBundle:
                     data = _safe_read(root, rel)
                 except FileNotFoundError:
                     if required:
-                        raise AssetError(f"Monaco file missing: {rel} (run: python-studio --fetch-monaco)")
+                        raise AssetError(f"Monaco file missing: {rel} (run: pyo --fetch-monaco)")
                     continue
                 files.append(BundleFile(rel, "js", data))
             try:
                 css = _safe_read(root, CSS_FILE)
             except FileNotFoundError:
-                raise AssetError(f"Monaco file missing: {CSS_FILE} (run: python-studio --fetch-monaco)")
+                raise AssetError(f"Monaco file missing: {CSS_FILE} (run: pyo --fetch-monaco)")
             files.append(BundleFile(CSS_FILE, "css", inline_css_resources(css, root)))
         except OSError as exc:
             raise AssetError(f"cannot read Monaco files: {exc}") from exc
