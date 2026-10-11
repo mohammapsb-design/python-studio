@@ -23,6 +23,12 @@ button:disabled{opacity:.4}
 #out{flex:1;margin:0;padding:4px 8px;overflow:auto;font:13px/17px monospace;white-space:pre-wrap;word-break:break-word;
   user-select:text;-webkit-user-select:text}
 .o-out{color:#d4d4d4}.o-err{color:#f48771}.o-note{color:#9da5b4;font-style:italic}.o-ok{color:#6a9955}.o-bad{color:#f14c4c}
+.o-in{color:#9cdcfe}
+#inrow{display:none;flex:none;gap:4px;padding:3px 6px;background:#1b1b1b;align-items:center}
+#inp{flex:1;min-width:0;box-sizing:border-box;background:#0c0c0c;color:#9cdcfe;border:1px solid #3c3c3c;border-radius:3px;padding:6px;font:13px monospace}
+#inrow button{padding:6px 9px}
+#app.kb #con:focus-within{height:35%}
+#app.kb #con:focus-within #out{display:block} /* typing program input: keep the output visible */
 /* Extra keys bar (Termux-style), shown above soft keyboard when viewport shrinks */
 #extrakeys{display:none;flex:none;flex-direction:column;background:#1a1a1a;border-top:1px solid #333;padding:2px 0;user-select:none;-webkit-user-select:none}
 #app.kb #extrakeys{display:flex}
@@ -101,7 +107,7 @@ button:disabled{opacity:.4}
   <button id="tog">Console</button><button id="exit">Exit</button>
  </div>
  <div id="edwrap"><div id="editor"></div><div id="edmsg">Loading editor ...</div><div id="taphint">Tap here to start typing</div></div>
- <div id="con"><div id="constatus">Console</div><pre id="out"></pre></div>
+ <div id="con"><div id="constatus">Console</div><pre id="out"></pre><div id="inrow"><input id="inp" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="program input: type a line, then Send"><button id="insend">Send</button><button id="ineof">EOF</button></div></div>
  <div id="extrakeys">
   <div class="row">
    <button data-k="Escape" class="special">ESC</button>
@@ -133,8 +139,9 @@ var ed=null,model=null,disposables=[],extra=[];
 
 function send(o){console.log("PSBRIDGE:"+JSON.stringify(o))}
 function addOut(cls,text){
-  var stick=out.scrollHeight-out.scrollTop-out.clientHeight<40,s=document.createElement("span");
-  s.className="o-"+cls;s.textContent=text;out.appendChild(s);
+  var stick=out.scrollHeight-out.scrollTop-out.clientHeight<40,last=out.lastChild,s;
+  if(last&&last.className==="o-"+cls&&last.firstChild){last.firstChild.appendData(text)} /* same kind: grow one node, keep the DOM small */
+  else{s=document.createElement("span");s.className="o-"+cls;s.textContent=text;out.appendChild(s)}
   if(stick)out.scrollTop=out.scrollHeight;
 }
 function setStatus(t){$("constatus").textContent=t}
@@ -488,6 +495,16 @@ function toggleConsole(){
   if(ed)ed.layout();
 }
 noFocusSteal("tog",toggleConsole);
+
+/* ---- console input (stdin): one line per Send, echoed locally because the program's stdin is a pipe ---- */
+function sendLine(){
+  if(!state.running)return;
+  var i=$("inp"),v=i.value;
+  addOut("in",v+"\n");send({op:"stdin",text:v});i.value="";
+}
+noFocusSteal("insend",sendLine);
+noFocusSteal("ineof",function(){if(state.running){addOut("note","[end of input]\n");send({op:"eof"})}});
+$("inp").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();sendLine()}});
 noFocusSteal("exit",askExit);
 $("m-save").addEventListener("click",function(){$("modal").style.display="none";doSave(true)});
 $("m-disc").addEventListener("click",function(){$("modal").style.display="none";send({op:"exit"})});
@@ -615,7 +632,7 @@ var PS={
     }else{addOut("bad","[save failed] "+msg+"\n");setStatus("save failed - your text is still in the editor")}
   },
   runStarted:function(name){
-    out.textContent="";con.style.display="flex";state.running=true;
+    out.textContent="";con.style.display="flex";state.running=true;$("inrow").style.display="flex";$("inp").value="";
     $("run").style.display="none";$("stop").style.display="";
     $("tog").style.background="";$("tog").style.color=""; /* console is visible */
     blurEditor(); /* close the keyboard so the output is visible */
@@ -624,7 +641,7 @@ var PS={
   },
   out:function(kind,text){addOut(kind,text)},
   runEnded:function(code,note){
-    state.running=false;$("run").style.display="";$("stop").style.display="none";
+    state.running=false;$("run").style.display="";$("stop").style.display="none";$("inrow").style.display="none";
     addOut(code===0?"ok":"bad","\n[process finished: "+note+"]\n");
     setStatus("finished: "+note);
   },

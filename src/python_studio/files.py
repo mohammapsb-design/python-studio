@@ -119,9 +119,22 @@ class Document:
                 fh.flush()
                 os.fsync(fh.fileno())
             if mode is not None:
-                os.chmod(tmp_path, mode)
+                try:
+                    os.chmod(tmp_path, mode)
+                except OSError:
+                    # Android shared storage (/sdcard, FUSE) refuses chmod: the permission bits
+                    # are synthetic there anyway, so this must not make the file unsaveable.
+                    pass
             os.replace(tmp_path, target)
             tmp_path = None
+            try:  # make the rename itself durable too; some filesystems cannot fsync a directory
+                dfd = os.open(directory, os.O_RDONLY)
+                try:
+                    os.fsync(dfd)
+                finally:
+                    os.close(dfd)
+            except OSError:
+                pass
         except OSError as exc:
             raise FileError(f"cannot save {self.path}: {exc.strerror or exc}") from exc
         finally:

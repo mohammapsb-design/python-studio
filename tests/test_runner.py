@@ -174,9 +174,108 @@ class RunnerTest(unittest.TestCase):
         c, _ = self.run_script("import os\nprint(os.getcwd())\n")
         self.assertEqual(os.path.realpath(c.text("out").strip()), os.path.realpath(self._td.name))
 
-    def test_stdin_is_closed(self):
-        c, _ = self.run_script("import sys\nprint(repr(sys.stdin.read()))\n")
-        self.assertEqual(c.text("out"), "''\n")
+    # ---- stdin ----
+    def start_script(self, body, **kw):
+        c = Collect()
+        r = Runner(c.out, c.on_exit, **kw)
+        r.start(self.script(body))
+        self.addCleanup(r.terminate)
+        return c, r
+
+    def wait_text(self, c, needle, timeout=10):
+        end = time.time() + timeout
+        while time.time() < end and needle not in c.text("out"):
+            time.sleep(0.02)
+        self.assertIn(needle, c.text("out"))
+
+    def test_input_single(self):
+        c, r = self.start_script("name = input('Name: ')\nprint('Hello,', name)\n")
+        self.wait_text(c, "Name: ")                       # the prompt arrives before any input
+        self.assertFalse(c.done.is_set())                  # ...and the program waits for us
+        self.assertTrue(r.send_input("Ali"))
+        self.assertTrue(c.done.wait(10))
+        self.assertEqual(c.text("out"), "Name: Hello, Ali\n")
+        self.assertEqual(c.exit[0], 0)
+
+    def test_input_multiple_lines_and_unicode(self):
+        c, r = self.start_script("a = input()\nb = input()\nprint(b, a)\n")
+        self.assertTrue(r.send_input("one"))
+        self.assertTrue(r.send_input("\u0633\u0644\u0627\u0645"))
+        self.assertTrue(c.done.wait(10))
+        self.assertEqual(c.text("out"), "\u0633\u0644\u0627\u0645 one\n")
+
+    def test_eof_ends_read_and_input_after_exit_is_rejected(self):
+        c, r = self.start_script("import sys\nprint(repr(sys.stdin.read()))\n")
+        self.assertTrue(r.send_input("abc", newline=False))
+        self.assertTrue(r.close_input())
+        self.assertTrue(c.done.wait(10))
+        self.assertEqual(c.text("out"), "'abc'\n")
+        self.assertFalse(r.send_input("late"))
+        self.assertFalse(r.close_input())
+
+    def test_input_when_idle_or_too_big_is_rejected(self):
+        r = Runner(lambda *a: None, lambda *a: None)
+        self.assertFalse(r.send_input("x"))
+        c, r = self.start_script("import time\ntime.sleep(30)\n")
+        self.assertFalse(r.send_input("x" * 70000))
+
+    def test_send_input_never_blocks_when_program_does_not_read(self):
+        c, r = self.start_script("import time\ntime.sleep(30)\n")
+        t0 = time.time()
+        results = [r.send_input("y" * 60000) for _ in range(200)]   # far more than a pipe holds
+        self.assertLess(time.time() - t0, 2.0)                       # the GUI thread is never stuck
+        self.assertIn(False, results)                                # bounded: overflow is refused
+        r.stop()
+        self.assertTrue(c.done.wait(10))                             # a blocked writer does not hang Stop
+
+    def test_endless_flood_is_stopped_automatically(self):
+        c, r = self.start_script("while True:\n    print('x' * 80)\n", max_bytes=1000, flood_limit=200_000)
+        self.assertTrue(c.done.wait(20), "flooding program was never stopped")
+        self.assertIn("SIGTERM", c.exit[1])
+        self.assertIn("keeps printing", c.text("note"))
+        self.assertLessEqual(len(c.text("out")), 1000)
+
+    def test_stop_kills_children_that_ignore_sigterm_even_if_leader_died(self):
+        pidfile = os.path.join(self._td.name, "child.pid")
+        body = (
+            "import subprocess, sys, time\n"
+            "p = subprocess.Popen([sys.executable, '-c', 'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(300)'])\n"
+            f"open({pidfile!r}, 'w').write(str(p.pid))\n"
+            "time.sleep(300)\n"
+        )
+        c, r = self.start_script(body)
+        end = time.time() + 5
+        while time.time() < end and not os.path.exists(pidfile):
+            time.sleep(0.05)
+        time.sleep(0.3)
+        child = int(open(pidfile).read())
+        r.stop()
+        self.assertTrue(c.done.wait(10))
+        end = time.time() + 6                       # SIGKILL escalation comes after STOP_GRACE
+        while time.time() < end and self._alive(child):
+            time.sleep(0.1)
+        self.assertFalse(self._alive(child), "child that ignores SIGTERM survived Stop")
+
+    def test_terminate_is_synchronous_and_leaves_nothing_behind(self):
+        body = "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nprint('up', flush=True)\nwhile True: time.sleep(1)\n"
+        c, r = self.start_script(body)
+        self.wait_text(c, "up")
+        pid = r._proc.pid
+        t0 = time.time()
+        self.assertTrue(r.terminate(grace=0.5))
+        self.assertLess(time.time() - t0, 3)
+        end = time.time() + 3
+        while time.time() < end and self._alive(pid):
+            time.sleep(0.05)
+        self.assertFalse(self._alive(pid))
+
+    @unittest.skipUnless(os.path.exists("/bin/sh") or os.path.exists("/system/bin/sh") or os.path.exists("/usr/bin/sh"), "no sh")
+    def test_optional_memory_limit(self):
+        body = "try:\n    x = bytearray(900 * 1024 * 1024)\n    print('allocated')\nexcept MemoryError:\n    print('MemoryError')\n"
+        c, _ = self.run_script(body, mem_limit_mb=300)
+        self.assertEqual(c.text("out"), "MemoryError\n")
+        c, _ = self.run_script("print('small ok')\n", mem_limit_mb=300)   # normal programs unaffected
+        self.assertEqual(c.text("out"), "small ok\n")
 
     def test_reusable_after_finish(self):
         c, r = self.run_script("print(1)\n")

@@ -32,6 +32,10 @@ button:active{background:#505357}
 #out{flex:1;margin:0;padding:4px 8px;overflow:auto;font:13px/17px monospace;white-space:pre-wrap;word-break:break-word;
   user-select:text;-webkit-user-select:text}
 .o-out{color:#d4d4d4}.o-err{color:#f48771}.o-note{color:#9da5b4;font-style:italic}.o-ok{color:#6a9955}.o-bad{color:#f14c4c}
+.o-in{color:#9cdcfe}
+#inrow{display:none;flex:none;gap:4px;padding:3px 6px;background:#1b1b1b;align-items:center}
+#inp{flex:1;min-width:0;box-sizing:border-box;background:#0c0c0c;color:#9cdcfe;border:1px solid #3c3c3c;border-radius:3px;padding:6px;font:13px monospace}
+#inrow button{padding:6px 9px}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:10}
 #modal .box{background:#252526;padding:16px;border-radius:6px;max-width:80%}
 #modal .row{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
@@ -46,7 +50,7 @@ button:active{background:#505357}
   <div id="stack"><pre id="hl"></pre>
    <textarea id="ta" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
    <div id="pop"></div></div></div></div>
- <div id="con"><div id="constatus">Console</div><pre id="out"></pre></div>
+ <div id="con"><div id="constatus">Console</div><pre id="out"></pre><div id="inrow"><input id="inp" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="program input: type a line, then Send"><button id="insend">Send</button><button id="ineof">EOF</button></div></div>
 </div>
 <div id="modal"><div class="box"><div id="mtext">Unsaved changes.</div>
  <div class="row"><button id="m-save">Save &amp; exit</button><button id="m-disc">Discard</button><button id="m-cancel">Cancel</button></div></div></div>
@@ -258,11 +262,22 @@ $("m-cancel").addEventListener("click",function(){$("modal").style.display="none
 /* ---- console ---- */
 function nearBottom(){return out.scrollHeight-out.scrollTop-out.clientHeight<40}
 function addOut(cls,text){
-  var stick=nearBottom(),s=document.createElement("span");
-  s.className="o-"+cls;s.textContent=text;out.appendChild(s);
+  var stick=nearBottom(),last=out.lastChild,s;
+  if(last&&last.className==="o-"+cls&&last.firstChild){last.firstChild.appendData(text)}
+  else{s=document.createElement("span");s.className="o-"+cls;s.textContent=text;out.appendChild(s)}
   if(stick)out.scrollTop=out.scrollHeight;
 }
 function setStatus(t){$("constatus").textContent=t}
+
+/* ---- console input (stdin): one line per Send, echoed locally because the program's stdin is a pipe ---- */
+function sendLine(){
+  if(!state.running)return;
+  var i=$("inp"),v=i.value;
+  addOut("in",v+"\n");send({op:"stdin",text:v});i.value="";
+}
+noFocusSteal("insend",sendLine);
+noFocusSteal("ineof",function(){if(state.running){addOut("note","[end of input]\n");send({op:"eof"})}});
+$("inp").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();sendLine()}});
 
 /* ---- API called from Python (evaluatejs) ---- */
 var PS={
@@ -276,14 +291,14 @@ var PS={
     else{addOut("bad","[save failed] "+msg+"\n");setStatus("save failed - your text is still in the editor")}
   },
   runStarted:function(name){
-    out.textContent="";con.style.display="flex";state.running=true;
+    out.textContent="";con.style.display="flex";state.running=true;$("inrow").style.display="flex";$("inp").value="";
     $("run").style.display="none";$("stop").style.display="";
     setStatus("running "+name+" ...");
     addOut("note","$ python "+name+"\n");
   },
   out:function(kind,text){addOut(kind,text)},
   runEnded:function(code,note){
-    state.running=false;$("run").style.display="";$("stop").style.display="none";
+    state.running=false;$("run").style.display="";$("stop").style.display="none";$("inrow").style.display="none";
     addOut(code===0?"ok":"bad","\n[process finished: "+note+"]\n");
     setStatus("finished: "+note);
   },

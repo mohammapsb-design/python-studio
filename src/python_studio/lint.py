@@ -89,6 +89,32 @@ def _collect_defined(tree: ast.AST) -> set[str]:
                 defined.add(node.name)
             self.generic_visit(node)
 
+        # match statement captures (3.10+): `case (a, b)`, `case [x, *rest]`, `case {"k": v, **others}`
+        def visit_MatchAs(self, node) -> None:
+            if node.name:
+                defined.add(node.name)
+            self.generic_visit(node)
+
+        def visit_MatchStar(self, node) -> None:
+            if node.name:
+                defined.add(node.name)
+
+        def visit_MatchMapping(self, node) -> None:
+            if node.rest:
+                defined.add(node.rest)
+            self.generic_visit(node)
+
+        # PEP 695 type parameters (3.12+): `def f[T](x: T)`, `class C[T]`, `type A[T] = ...`
+        def visit_TypeVar(self, node) -> None:
+            defined.add(node.name)
+            self.generic_visit(node)
+
+        def visit_ParamSpec(self, node) -> None:
+            defined.add(node.name)
+
+        def visit_TypeVarTuple(self, node) -> None:
+            defined.add(node.name)
+
         def visit_Global(self, node: ast.Global) -> None:
             for n in node.names:
                 defined.add(n)
@@ -129,6 +155,15 @@ def lint_python(text: str) -> list[dict[str, Any]]:
     """Return Monaco-compatible markers for *text*. Empty list if clean."""
     if not text or not text.strip():
         return []
+    try:
+        return _lint(text)
+    except (RecursionError, MemoryError):
+        # absurdly nested source (e.g. 50 000 chained operators) overflows the parser or the
+        # visitors; one warning instead of an exception on every edit
+        return [_marker("source is too deeply nested to analyse", 1, 1, 2, SEV_WARN)]
+
+
+def _lint(text: str) -> list[dict[str, Any]]:
     try:
         tree = ast.parse(text)
     except SyntaxError as exc:

@@ -18,6 +18,7 @@ How the page gets into the WebView (only documented Termux:GUI calls are used):
 from __future__ import annotations
 
 import os
+import signal
 import sys
 import threading
 import time
@@ -51,6 +52,24 @@ def encode_for_setdata(html: str) -> str:
     string as a URL-encoded data: URI body: a raw '#' cuts the page off and a raw '%'
     is an invalid escape. Both are everywhere in CSS, so percent-encode everything."""
     return quote(html, safe="")
+
+
+def _raise_interrupt(signum, frame) -> None:
+    raise KeyboardInterrupt
+
+
+def _install_exit_signals() -> None:
+    """Closing the Termux session (SIGHUP) or `kill` (SIGTERM) must go through the normal
+    shutdown path: the user's program runs in its own session and would otherwise be left
+    running forever in the background."""
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _raise_interrupt)
+        except (ValueError, OSError):  # not the main thread / unsupported
+            pass
 
 
 def run(doc: Document, basic_editor: bool = False) -> int:
@@ -111,13 +130,18 @@ def run(doc: Document, basic_editor: bool = False) -> int:
                 wv.evaluatejs(code)
 
         ctl = Controller(doc, eval_js=eval_js, finish=a.finish, notice=notice, assets=bundle)
+        _install_exit_signals()
 
         def pump() -> None:
+            last_error = None
             while not stop_pump.is_set():
                 try:
-                    ctl.pump()
+                    ctl.pump()  # undelivered output stays queued and is retried on the next tick
+                    last_error = None
                 except Exception as exc:
-                    print(f"python-studio: output pump failed: {exc!r}", file=sys.stderr)
+                    if repr(exc) != last_error:  # do not print the same failure 20 times a second
+                        last_error = repr(exc)
+                        print(f"python-studio: output pump failed: {exc!r}", file=sys.stderr)
                 time.sleep(PUMP_INTERVAL)
 
         threading.Thread(target=pump, daemon=True).start()

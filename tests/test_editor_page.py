@@ -71,7 +71,7 @@ class StaticTest(unittest.TestCase):
         sent = set(re.findall(r"send\(\{op:\"(\w+)\"", self.html))
         self.assertTrue(sent)
         self.assertLessEqual(sent, ALLOWED_OPS)
-        self.assertEqual(sent, {"ready", "save", "run", "stop", "exit"})
+        self.assertEqual(sent, {"ready", "save", "run", "stop", "exit", "lint", "stdin", "eof"})
 
     def test_both_pages_implement_every_python_to_js_call(self):
         called = {"load", "saved", "runStarted", "out", "runEnded", "fail", "back", "notice"}
@@ -101,6 +101,8 @@ function el(id){const e={id,style:{},className:'',children:[],listeners:{},disab
   appendChild(c){this.children.push(c)},addEventListener(t,f){(this.listeners[t]=this.listeners[t]||[]).push(f)},
   setAttribute(k,v){this.attrs=this.attrs||{};this.attrs[k]=v},dispatchEvent(ev){this.fire(ev.type)},
   fire(t){(this.listeners[t]||[]).forEach(f=>f({preventDefault(){}}))},click(){this.fire('pointerdown');this.fire('click')},
+  get lastChild(){return this.children.length?this.children[this.children.length-1]:null},
+  get firstChild(){const s=this;return{appendData(t){s._t+=t}}},
   text(){return this.children.length?this.children.map(c=>c.textContent).join(''):this._t}};return e}
 const els={},heads=[];
 const doc={getElementById(i){return els[i]||(els[i]=el(i))},createElement(t){const e=el(t);e.tag=t;return e},
@@ -159,6 +161,13 @@ const W=(t,f)=>(ctx.winl[t]||[]).forEach(x=>x(f));
     R.name0=$('fname').text();
     $('run').click();R.run0=bridge[bridge.length-1];
     ctx.PS.runStarted('a b.py');R.runHidden=$('run').style.display;R.blurred=log.includes('blur');
+    R.inrowRunning=$('inrow').style.display;
+    $('inp').value='Ali';$('insend').click();R.stdinMsg=bridge[bridge.length-1];R.inpCleared=$('inp').value;
+    R.echo=$('out').text();
+    $('ineof').click();R.eofMsg=bridge[bridge.length-1];
+    $('inp').value='ignored';ctx.PS.runEnded(0,'exit code 0');R.inrowEnded=$('inrow').style.display;
+    const nBefore=bridge.length;$('insend').click();R.noStdinWhenIdle=bridge.length===nBefore;
+    ctx.PS.runStarted('c.py');for(let i=0;i<50;i++)ctx.PS.out('out','x\n');R.spansAfter50=$('out').children.length;R.coalescedText=$('out').text().length;
     ctx.PS.runEnded(0,'exit code 0');
     m.edit('x=2\n');R.nameDirty=$('fname').text();
     $('save').click();R.save1=bridge[bridge.length-1];
@@ -323,6 +332,20 @@ class PageBehaviourTest(unittest.TestCase):
     def test_run_started_hides_run_and_closes_keyboard(self):
         self.assertEqual(self.R["runHidden"], "none")
         self.assertTrue(self.R["blurred"])
+
+    def test_console_input_row_sends_stdin_and_eof(self):
+        R = self.R
+        self.assertEqual(R["inrowRunning"], "flex")
+        self.assertEqual(R["stdinMsg"], {"op": "stdin", "text": "Ali"})
+        self.assertEqual(R["inpCleared"], "")
+        self.assertIn("Ali\n", R["echo"])            # echoed locally: the program's stdin is a pipe
+        self.assertEqual(R["eofMsg"], {"op": "eof"})
+        self.assertEqual(R["inrowEnded"], "none")
+        self.assertTrue(R["noStdinWhenIdle"])         # nothing is sent when no program runs
+
+    def test_console_output_is_coalesced_into_few_nodes(self):
+        self.assertEqual(self.R["spansAfter50"], 2)   # "$ python" note + ONE node for 50 writes
+        self.assertEqual(self.R["coalescedText"], len("$ python c.py\n") + 100)
 
     def test_dirty_tracking(self):
         R = self.R

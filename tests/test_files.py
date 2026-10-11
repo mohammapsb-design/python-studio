@@ -135,5 +135,24 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o750)
 
 
+    def test_save_survives_filesystem_that_refuses_chmod(self):
+        # Android shared storage (/sdcard, FUSE) answers chmod with EPERM
+        path = self.p("shared.py")
+        open(path, "w").write("old\n")
+        doc = Document.open(path)
+        real = os.chmod
+
+        def refuse(*a, **k):
+            raise PermissionError(1, "Operation not permitted")
+
+        os.chmod = refuse
+        try:
+            doc.save("new\n")
+        finally:
+            os.chmod = real
+        self.assertEqual(open(path).read(), "new\n")
+        self.assertEqual(sorted(os.listdir(self.dir)), ["shared.py"])    # no temp file left behind
+
+
 if __name__ == "__main__":
     unittest.main()

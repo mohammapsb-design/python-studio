@@ -218,5 +218,75 @@ class ControllerTest(unittest.TestCase):
         self.assertTrue(any("output truncated" in c for c in self.js))
 
 
+    def test_pump_failure_keeps_output_and_run_ended_for_retry(self):
+        # a transient eval_js failure used to drop the queued items, including "runEnded",
+        # which left the UI stuck in the running state for good
+        fail = {"on": False}
+        sent = []
+
+        def flaky(code):
+            if fail["on"] and code.startswith("PS.out"):
+                fail["on"] = False
+                raise OSError("socket hiccup")
+            sent.append(code)
+
+        ctl = Controller(Document.open(self.path), eval_js=flaky, finish=lambda: None)
+        self.addCleanup(ctl.shutdown)
+        ctl.handle(bridge({"op": "run", "text": "print('hi')\n"}))
+        time.sleep(0.8)
+        fail["on"] = True
+        with self.assertRaises(OSError):
+            ctl.pump()
+        ctl.pump()
+        joined = "\n".join(sent)
+        self.assertIn("hi", joined)
+        self.assertIn("PS.runEnded(0", joined)
+        self.assertLess(joined.index("PS.out"), joined.index("PS.runEnded"))   # order preserved
+
+    def test_large_output_is_split_into_bounded_js_calls(self):
+        from python_studio.bridge import JS_CHUNK_CHARS
+        self.ctl.handle(bridge({"op": "run", "text": "print('z' * 200000)\n"}))
+        self.wait_for("PS.runEnded")
+        outs = [c for c in self.js if c.startswith("PS.out")]
+        self.assertGreater(len(outs), 1)
+        self.assertTrue(all(len(c) < JS_CHUNK_CHARS + 100 for c in outs))
+        self.assertEqual(sum(c.count("z") for c in outs), 200000)
+
+    def test_stdin_ops_feed_the_program(self):
+        self.ctl.handle(bridge({"op": "run", "text": "a = input('a? ')\nb = input('b? ')\nprint('got', a, b)\n"}))
+        self.wait_for("a? ")
+        self.ctl.handle(bridge({"op": "stdin", "text": "1"}))
+        self.wait_for("b? ")
+        self.ctl.handle(bridge({"op": "stdin", "text": "2"}))
+        self.wait_for("PS.runEnded(0")
+        self.assertIn("got 1 2", "".join(c for c in self.js if c.startswith("PS.out")).replace("\\n", "\n"))
+
+    def test_eof_op_and_stdin_without_program(self):
+        self.ctl.handle(bridge({"op": "stdin", "text": "x"}))
+        self.assertIn("no program is running", self.js[-1])
+        self.ctl.handle(bridge({"op": "run", "text": "import sys\nprint(len(sys.stdin.read()))\n"}))
+        self.ctl.handle(bridge({"op": "stdin", "text": "abc"}))
+        self.ctl.handle(bridge({"op": "eof"}))
+        self.wait_for("PS.runEnded(0")
+        self.assertIn('"4', "".join(self.js).replace("\\n", ""))     # "abc\n" = 4 characters
+
+    def test_stdin_message_validation(self):
+        self.assertIsNone(parse_bridge_message(bridge({"op": "stdin"})))            # text required
+        self.assertIsNone(parse_bridge_message(bridge({"op": "stdin", "text": 5})))
+        self.assertEqual(parse_bridge_message(bridge({"op": "eof"}))["op"], "eof")
+
+    def test_shutdown_is_synchronous(self):
+        self.ctl.handle(bridge({"op": "run", "text": "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nprint('up', flush=True)\nwhile True: time.sleep(1)\n"}))
+        self.wait_for("up")
+        pid = self.ctl.runner._proc.pid
+        t0 = time.time()
+        self.ctl.shutdown()
+        self.assertLess(time.time() - t0, 3)
+        end = time.time() + 3
+        while time.time() < end and os.path.exists(f"/proc/{pid}") and open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()[0] != "Z":
+            time.sleep(0.05)
+        self.assertTrue(not os.path.exists(f"/proc/{pid}") or open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()[0] == "Z")
+
+
 if __name__ == "__main__":
     unittest.main()

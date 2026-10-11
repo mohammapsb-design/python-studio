@@ -77,7 +77,7 @@ python-studio --help
 - Termux-style extra key row (ESC, TAB, arrows, …) above the soft keyboard
 - Pinch-to-zoom font size
 - Console show/hide button
-- Run / Stop with stdout & stderr in the console
+- Run / Stop with stdout & stderr in the console, plus an input box for `input()` (Send / EOF)
 
 **Not included yet:** multi-file tabs, built-in file manager.
 

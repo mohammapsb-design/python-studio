@@ -198,6 +198,10 @@ About **one second** after typing pauses, the page sends the buffer to Python (`
 - Shows stdout, stderr, run status  
 - **Console** toolbar button toggles visibility for more editor space  
 - Opening **Run** forces the console visible  
+- **Program input (stdin):** while a program runs, an input row appears under the output. *Send* (or Enter) sends one line to `input()` / `sys.stdin`; *EOF* closes stdin (like Ctrl-D). Typed lines are echoed in the console. Input goes through a small writer thread, so a program that never reads its input cannot freeze the GUI  
+- **Output limit:** the console keeps the first 1,000,000 bytes of a run and says so once. A program that keeps printing far past that (more than 64 MiB discarded) is stopped automatically instead of burning CPU in the background  
+- **Stop:** SIGTERM to the program's process group, SIGKILL to the whole group after 2 s (also when the main process already exited but a child ignored SIGTERM). Leaving the IDE (Exit, Back, `kill`, closing the Termux session) stops the program synchronously, so nothing keeps running afterwards  
+- **Memory cap (optional):** `PSTUDIO_MEM_MB=<n> python-studio file.py` limits the program's address space (`ulimit -v`). Off by default because libraries such as numpy reserve a lot of address space  
 
 ### 6.5 Not implemented
 
@@ -228,7 +232,7 @@ Design constraints that shaped the code:
 - Termux:GUI WebView belongs to the **Termux:GUI app**, not Termux itself → cleartext `http://127.0.0.1` is unreliable for serving Monaco.  
 - Solution: **no local HTTP server**; Monaco files are base64-chunked over `evaluateJS` after `setData`.  
 - `setData` pages have an opaque origin → **Web Workers disabled**; Monaco runs on the main-thread fallback.  
-- Bridge ops are a **fixed allow-list** (`ready`, `save`, `run`, `stop`, `exit`, `lint`) — not a generic remote shell.
+- Bridge ops are a **fixed allow-list** (`ready`, `save`, `run`, `stop`, `exit`, `lint`, `stdin`, `eof`) — not a generic remote shell.
 
 More historical detail about failed HTTP approaches is preserved in older notes; the shipping path is the bridge delivery pipeline in `monaco_bundle.py` / `monaco_assets.py`.
 
@@ -250,6 +254,8 @@ More historical detail about failed HTTP approaches is preserved in older notes;
 - Android may refuse to open the soft keyboard without a user gesture.  
 - Undefined-name lint is heuristic (no import resolution of third-party packages).  
 - Single file per session.  
+- A running program has no terminal: `input()` works, but `getpass`, `curses`, `readline` editing and anything that needs a TTY do not.  
+- The IDE does not detect that the file was changed on disk by another program while it is open; Save overwrites it.  
 - UI strings and extra-key labels are ASCII-oriented for embedding constraints.
 
 ---

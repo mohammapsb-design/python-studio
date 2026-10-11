@@ -19,7 +19,8 @@ from .lint import lint_python
 from .runner import Runner, RunnerError
 
 BRIDGE_PREFIX = "PSBRIDGE:"
-ALLOWED_OPS = {"ready", "save", "run", "stop", "exit", "lint"}
+ALLOWED_OPS = {"ready", "save", "run", "stop", "exit", "lint", "stdin", "eof"}
+JS_CHUNK_CHARS = 32 * 1024  # one evaluatejs() never carries more console text than this
 
 
 def js_call(fn: str, *args: Any) -> str:
@@ -50,7 +51,7 @@ def parse_bridge_message(raw: str) -> Optional[dict]:
     for flag in ("then_exit",):
         if flag in msg and not isinstance(msg[flag], bool):
             return None
-    if op in ("save", "run", "lint") and "text" not in msg:
+    if op in ("save", "run", "lint", "stdin") and "text" not in msg:
         return None
     return msg
 
@@ -73,6 +74,7 @@ class Controller:
         self._finish = finish
         self._lock = threading.Lock()
         self._pending: list[tuple[str, str]] = []
+        self._outbox: list[str] = []  # JS calls built but not yet delivered (retried if eval_js fails)
         kwargs = {}
         if max_output_bytes is not None:
             kwargs["max_bytes"] = max_output_bytes
@@ -88,7 +90,11 @@ class Controller:
             self._pending.append(("end", json.dumps([code, note])))
 
     def pump(self) -> None:
-        """Forward queued output to the WebView, batching same-kind chunks."""
+        """Forward queued output to the WebView, batching same-kind chunks.
+
+        Calls are built into an outbox and removed only after eval_js() succeeded, so a
+        transient failure cannot drop output or, worse, the final "run ended" event
+        (which would leave the UI stuck in the running state)."""
         with self._lock:
             items, self._pending = self._pending, []
         batch_kind: Optional[str] = None
@@ -97,20 +103,25 @@ class Controller:
         def flush() -> None:
             nonlocal batch_kind, batch
             if batch_kind is not None and batch:
-                self._eval_js(js_call("out", batch_kind, "".join(batch)))
+                text = "".join(batch)
+                for i in range(0, len(text), JS_CHUNK_CHARS):
+                    self._outbox.append(js_call("out", batch_kind, text[i:i + JS_CHUNK_CHARS]))
             batch_kind, batch = None, []
 
         for kind, text in items:
             if kind == "end":
                 flush()
                 code, note = json.loads(text)
-                self._eval_js(js_call("runEnded", code, note))
+                self._outbox.append(js_call("runEnded", code, note))
                 continue
             if kind != batch_kind:
                 flush()
                 batch_kind = kind
             batch.append(text)
         flush()
+        while self._outbox:
+            self._eval_js(self._outbox[0])  # raises -> the call stays queued for the next tick
+            del self._outbox[0]
 
     # ---- messages from the WebView ----
     def handle(self, raw: str) -> None:
@@ -171,6 +182,16 @@ class Controller:
     def _op_stop(self, msg: dict) -> None:
         self.runner.stop()
 
+    def _op_stdin(self, msg: dict) -> None:
+        """One line typed into the console's input box (a newline is added)."""
+        if not self.runner.running:
+            self._eval_js(js_call("fail", "no program is running, input ignored"))
+        elif not self.runner.send_input(msg["text"]):
+            self._eval_js(js_call("fail", "input rejected (too long, or the program is not reading its input)"))
+
+    def _op_eof(self, msg: dict) -> None:
+        self.runner.close_input()
+
     def _op_lint(self, msg: dict) -> None:
         """Syntax + undefined-name check; results become Monaco red markers."""
         markers = lint_python(msg["text"])
@@ -181,4 +202,4 @@ class Controller:
         self._finish()
 
     def shutdown(self) -> None:
-        self.runner.stop()
+        self.runner.terminate()  # synchronous: nothing may outlive the IDE
